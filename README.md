@@ -316,7 +316,6 @@ Project references follow the arrows above: `Trips.Api` depends on everything el
 
 **Known issues** (tracked as follow-ups, all out of WS8 scope):
 
-- The background `OptimisationRunner` in `Trips.Api` has a foreign-key sequencing quirk when run with the OR-Tools solver under high concurrency (the run row is written before the run-stats row is fully constructed). The heuristic solver path is unaffected, and the seed / E2E paths use `solver: 1` (Heuristic) for that reason.
 - The what-if screenshot in [Walk-through](#walk-through) is still an SVG mockup. The what-if dialog renders correctly against the live API once a solution is locked, but the modal-overlay screenshot capture is fiddly to do reproducibly through Playwright and was left as a follow-up.
 
 ## Test counts
