@@ -81,7 +81,7 @@ public sealed class InstanceGenerator
             var c = _atlas.Origins[driverCluster[d]];
             var home = JitterAround(c, rng);
             var idx = nodes.Count;
-            nodes.Add(new SolverNode(idx, NodeKind.Home, null));   // null candidateId for driver homes
+            nodes.Add(new SolverNode(idx, NodeKind.Home, null, home));   // null candidateId for driver homes
             nodePoints.Add(home);
             drivers.Add(new SolverDriver(Guid.NewGuid(), idx, seats[d]));
         }
@@ -97,7 +97,7 @@ public sealed class InstanceGenerator
             var participantId = Guid.NewGuid();
 
             var homeIdx = nodes.Count;
-            nodes.Add(new SolverNode(homeIdx, NodeKind.Home, Guid.NewGuid()));
+            nodes.Add(new SolverNode(homeIdx, NodeKind.Home, Guid.NewGuid(), home));
             nodePoints.Add(home);
             candidateIndices.Add(homeIdx);
             walks.Add(0);
@@ -113,7 +113,7 @@ public sealed class InstanceGenerator
                 if (walkMins > 12) continue; // walk-budget infeasible — skip
                 var idx = nodes.Count;
                 var kind = (NodeKind)(rng.Next(1, 4)); // TrainStation/BusStop/Wharf
-                nodes.Add(new SolverNode(idx, kind, Guid.NewGuid()));
+                nodes.Add(new SolverNode(idx, kind, Guid.NewGuid(), stopPoint));
                 nodePoints.Add(stopPoint);
                 candidateIndices.Add(idx);
                 walks.Add(walkMins);
@@ -123,7 +123,7 @@ public sealed class InstanceGenerator
 
         // Destination — last node
         var destIdx = nodes.Count;
-        nodes.Add(new SolverNode(destIdx, NodeKind.TrainStation, null));   // dest never has CandidateNodeId
+        nodes.Add(new SolverNode(destIdx, NodeKind.TrainStation, null, destPoint));   // dest never has CandidateNodeId
         nodePoints.Add(destPoint);
 
         // Travel matrix — haversine × congestion

@@ -1,4 +1,3 @@
-using NetTopologySuite.Geometries;
 using Trips.Core.Abstractions;
 using Trips.Core.Domain;
 
@@ -20,15 +19,13 @@ public static class SolutionBuilder
     /// <param name="nodeChoicePerPassenger">For each passenger, the chosen node index.</param>
     /// <param name="driverPerPassenger">For each passenger, the assigned driver index.</param>
     /// <param name="destinationNodeIndex">Index of the destination node.</param>
-    /// <param name="nodeLocations">Per-node WGS84 point — used to stamp <see cref="Stop.Location"/>.</param>
     public static Solution Build(
         SolverInput input,
         string label,
         IReadOnlyList<IReadOnlyList<int>> routesPerDriver,
         IReadOnlyList<int> nodeChoicePerPassenger,
         IReadOnlyList<int> driverPerPassenger,
-        int destinationNodeIndex,
-        IReadOnlyList<Point> nodeLocations)
+        int destinationNodeIndex)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
@@ -75,7 +72,7 @@ public static class SolutionBuilder
                     id: Guid.NewGuid(),
                     driverRouteId: routeId,
                     orderIndex: i,
-                    location: nodeLocations[node],
+                    location: nodeInfo.Location,
                     candidateNodeId: nodeInfo.CandidateNodeId ?? Guid.Empty,
                     estimatedArrival: input.DepartAt.AddMinutes(cursorMins),
                     pickups: pickups);

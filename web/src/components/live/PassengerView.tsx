@@ -1,8 +1,5 @@
 "use client";
 
-// Passenger live view — top half map (pickup + driver position), bottom half
-// pickup details, walk-time, "I'm here" button, live ETA.
-
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,7 +26,6 @@ import { SYDNEY_CBD, type MapViewState } from "@/lib/store";
 import type {
   DriverPositionPayload,
   EtaUpdatedPayload,
-  RouteRecomputedPayload,
 } from "@/lib/realtime/hub";
 import type { LatLng, Solution, SolutionRoute, SolutionStop } from "@/lib/api/schema";
 
@@ -70,7 +66,6 @@ function findPickupForPassenger(
 
 function approxWalkMinutes(from: LatLng | undefined, to: LatLng): number | null {
   if (!from) return null;
-  // Haversine, then 80 m/min walking pace (~4.8 km/h).
   const R = 6371_000;
   const toRad = (n: number): number => (n * Math.PI) / 180;
   const dLat = toRad(to.lat - from.lat);
@@ -96,7 +91,6 @@ export function PassengerView({
   const [myPos, setMyPos] = useState<LatLng | undefined>(undefined);
   const arrivalAnnounceRef = useRef<number>(0);
 
-  // Subscribe to hub events.
   useEffect(() => {
     const off1 = hub.onDriverPosition((p: DriverPositionPayload) => {
       setDriverPos({ lat: p.lat, lng: p.lng });
@@ -105,9 +99,9 @@ export function PassengerView({
       if (p.passengerId !== participantId) return;
       setLiveEta(new Date(p.newEta));
     });
-    const off3 = hub.onRouteRecomputed((p: RouteRecomputedPayload) => {
-      toast.info("Route changed", {
-        description: `Driver re-routed (${p.solutionId.slice(0, 8)}). Pickup may be different.`,
+    const off3 = hub.onRouteRecomputed(() => {
+      toast.info("Driver's route updated", {
+        description: "Your pickup spot may be different.",
       });
     });
     return () => {
@@ -117,7 +111,6 @@ export function PassengerView({
     };
   }, [hub, participantId]);
 
-  // One-off non-broadcasting geolocation read just so we can show walk-time.
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
@@ -137,7 +130,6 @@ export function PassengerView({
   const currentEta = liveEta ?? initialEta;
   const driverName = pickup?.route.driverDisplayName;
 
-  // Reverse: when the driver is "almost here" we want a one-shot toast.
   useEffect(() => {
     if (!currentEta) return;
     const minutes = (currentEta.getTime() - Date.now()) / 60_000;
@@ -186,7 +178,7 @@ export function PassengerView({
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p className="text-muted-foreground">
-              You will see your live pickup once the trip organiser locks a solution and you are
+              You&apos;ll see your live pickup once the trip organiser confirms a plan and you&apos;re
               part of a driver&apos;s route.
             </p>
             <Button
@@ -213,7 +205,7 @@ export function PassengerView({
     setImHere(true);
     const stopKey = pickup!.stop.candidateNodeId ?? `stop-${pickup!.index}`;
     try {
-      await hub.passengerCheckIn(stopKey);
+      await hub.passengerCheckIn(participantId, stopKey);
       toast.success("Checked in", {
         description: "Waiting for your driver",
       });
@@ -227,7 +219,7 @@ export function PassengerView({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="relative h-[55%] min-h-0">
+      <div className="relative h-[58%] min-h-0">
         <LiveMap
           destination={{
             address: trip.data.destinationAddress,
@@ -240,12 +232,16 @@ export function PassengerView({
           viewState={viewState}
           onMove={setViewState}
         />
-        <div className="bg-background/90 absolute left-4 top-4 flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs shadow-sm">
+        <Card
+          variant="floating"
+          size="sm"
+          className="absolute top-4 left-4 z-10 flex flex-row items-center gap-2 px-3 py-1.5 text-xs"
+        >
           <Link href={`/trips/${tripId}`} className="flex items-center gap-1.5">
             <ArrowLeft className="h-3.5 w-3.5" /> {trip.data.name}
           </Link>
-        </div>
-        <div className="absolute right-4 top-4">
+        </Card>
+        <div className="absolute top-4 right-4 z-10">
           <ConnectionBadge status={hub.status} error={hub.error} />
         </div>
       </div>
@@ -271,7 +267,7 @@ export function PassengerView({
                   {walkMinutes != null ? `${walkMinutes.toFixed(0)} min walk` : "Walk time unknown"}
                 </Badge>
                 <Badge variant="outline">
-                  Pickup walk allowance {pickup.stop.walkMetres.toFixed(0)} m
+                  You&apos;ll walk {pickup.stop.walkMetres.toFixed(0)} m to the stop
                 </Badge>
                 <a
                   href={walkHref}
@@ -285,19 +281,19 @@ export function PassengerView({
               <Separator className="my-3" />
               <dl className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <dt className="text-muted-foreground uppercase tracking-wider">Driver</dt>
+                  <dt className="text-muted-foreground text-[10px] uppercase tracking-wider">Driver</dt>
                   <dd className="flex items-center gap-1.5 font-medium">
                     <CarFront className="h-3.5 w-3.5" /> {pickup.route.driverDisplayName}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground uppercase tracking-wider">Scheduled</dt>
+                  <dt className="text-muted-foreground text-[10px] uppercase tracking-wider">Scheduled</dt>
                   <dd className="font-medium tabular-nums">
                     {format(new Date(pickup.stop.arriveAt), "EEE HH:mm")}
                   </dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-muted-foreground uppercase tracking-wider">Live ETA</dt>
+                  <dt className="text-muted-foreground text-[10px] uppercase tracking-wider">Live ETA</dt>
                   <dd
                     aria-live="polite"
                     aria-atomic

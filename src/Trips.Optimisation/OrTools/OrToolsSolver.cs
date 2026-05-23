@@ -1,7 +1,6 @@
 using Google.OrTools.Sat;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using NetTopologySuite.Geometries;
 using Trips.Core.Abstractions;
 using Trips.Core.Domain;
 using Trips.Optimisation.Common;
@@ -78,7 +77,6 @@ public sealed class OrToolsSolver : ISolver
     private Solution SolveSync(SolverInput input, CancellationToken ct)
     {
         var destIndex = FindDestinationIndex(input);
-        var nodeLocations = ExtractNodeLocations(input);
         var pickupNodes = EnumeratePickupNodes(input);
 
         var model = new CpModel();
@@ -403,7 +401,7 @@ public sealed class OrToolsSolver : ISolver
         {
             // No solution found within budget — emit a degenerate solution where every passenger
             // is assigned to driver 0 at their first candidate node (best-effort fallback).
-            return BuildFallback(input, destIndex, nodeLocations);
+            return BuildFallback(input, destIndex);
         }
 
         // Extract solution
@@ -419,7 +417,7 @@ public sealed class OrToolsSolver : ISolver
             (driverChoice[p], nodeChoice[p]) = FindAssignment(solver, assign, input, p);
         }
 
-        return SolutionBuilder.Build(input, "OR-Tools", routesPerDriver, nodeChoice, driverChoice, destIndex, nodeLocations);
+        return SolutionBuilder.Build(input, "OR-Tools", routesPerDriver, nodeChoice, driverChoice, destIndex);
     }
 
     /// <summary>
@@ -537,7 +535,7 @@ public sealed class OrToolsSolver : ISolver
         return (0, input.Passengers[p].CandidateNodeIndices[0]);
     }
 
-    private Solution BuildFallback(SolverInput input, int destIndex, IReadOnlyList<Point> nodeLocations)
+    private Solution BuildFallback(SolverInput input, int destIndex)
     {
         _logger.LogWarning("OR-Tools produced no feasible solution; emitting fallback (cheapest-insertion construction).");
         // Cheapest-insertion construction — same as the heuristic's bootstrap. Respects capacity.
@@ -583,7 +581,7 @@ public sealed class OrToolsSolver : ISolver
 
         var routes = new IReadOnlyList<int>[driverCount];
         for (var d = 0; d < driverCount; d++) routes[d] = routesPerDriver[d];
-        return SolutionBuilder.Build(input, "OR-Tools-fallback", routes, nodeChoice, driverChoice, destIndex, nodeLocations);
+        return SolutionBuilder.Build(input, "OR-Tools-fallback", routes, nodeChoice, driverChoice, destIndex);
     }
 
     private static void CheapestInsert(List<int> sequence, int node, SolverInput input, int origin, int destIndex)
@@ -636,19 +634,6 @@ public sealed class OrToolsSolver : ISolver
         yield return destIndex;
     }
 
-    /// <summary>
-    /// Extract a per-node WGS84 location for downstream <see cref="Stop"/> stamping.
-    /// The <see cref="SolverInput"/> doesn't carry geographic points (just a travel matrix), so the
-    /// post-processor and the public consumer must thread Points through some other channel. For
-    /// solver-internal purposes we synthesise a placeholder; <see cref="SolutionPostprocessor"/>
-    /// rewrites real points later when a routes client is available.
-    /// </summary>
-    private static IReadOnlyList<Point> ExtractNodeLocations(SolverInput input)
-    {
-        var arr = new Point[input.Nodes.Count];
-        for (var i = 0; i < input.Nodes.Count; i++) arr[i] = new Point(0, 0) { SRID = 4326 };
-        return arr;
-    }
 }
 
 /// <summary>

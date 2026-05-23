@@ -167,7 +167,7 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
     return (
       <Card className="border-dashed">
         <CardContent className="text-muted-foreground py-10 text-center text-sm">
-          Lock a solution from the planner first — cost split needs a chosen route.
+          Choose a plan from the planner first — the cost split needs a confirmed route.
         </CardContent>
       </Card>
     );
@@ -313,16 +313,11 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
           {totals.driversAtZero && driverIds.size > 0 ? (
             <>
               <Separator className="my-4" />
-              <p className="text-emerald-600 dark:text-emerald-400 text-xs">
+              <p className="text-success text-xs">
                 Driver pays nothing — passengers cover fuel and tolls in proportion to the distance
                 they were aboard.
               </p>
             </>
-          ) : null}
-          {split.data?.totalCost === 0 && !split.isFetching ? (
-            <p className="text-muted-foreground mt-2 text-xs">
-              Cost split returns zero — WS7&apos;s CostSplitService may not be wired up yet.
-            </p>
           ) : null}
         </CardContent>
       </Card>

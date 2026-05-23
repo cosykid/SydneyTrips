@@ -163,7 +163,7 @@ public sealed class OptimisationRunner : BackgroundService
         // The matrix is sparse/synthetic — solvers from WS3 will overwrite this in production.
         var nodes = new List<SolverNode>
         {
-            new(0, NodeKind.Home, CandidateNodeId: null),
+            new(0, NodeKind.Home, CandidateNodeId: null, Location: trip.DestinationLocation),
         };
 
         var drivers = new List<SolverDriver>();
@@ -173,7 +173,7 @@ public sealed class OptimisationRunner : BackgroundService
         foreach (var participant in trip.Participants)
         {
             var participantNodeIndex = index++;
-            nodes.Add(new SolverNode(participantNodeIndex, NodeKind.Home, CandidateNodeId: null));
+            nodes.Add(new SolverNode(participantNodeIndex, NodeKind.Home, CandidateNodeId: null, Location: participant.Home));
 
             if (participant.HasCar)
             {

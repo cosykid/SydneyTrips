@@ -5,7 +5,7 @@ import { WeightSliders } from "./WeightSliders";
 import { DEFAULT_WEIGHTS } from "@/lib/api/schema";
 
 describe("WeightSliders", () => {
-  it("renders one slider per objective with the formatted value", () => {
+  it("renders one slider per route-priority dimension with the formatted value", () => {
     render(
       <WeightSliders
         weights={DEFAULT_WEIGHTS}
@@ -15,12 +15,12 @@ describe("WeightSliders", () => {
     );
 
     expect(screen.getByText("Driving time")).toBeInTheDocument();
-    expect(screen.getByText("Stops")).toBeInTheDocument();
-    expect(screen.getByText("Walking")).toBeInTheDocument();
-    expect(screen.getByText("Fairness")).toBeInTheDocument();
+    expect(screen.getByText("Number of stops")).toBeInTheDocument();
+    expect(screen.getByText("Walking distance")).toBeInTheDocument();
+    expect(screen.getByText("Fair sharing")).toBeInTheDocument();
 
-    // Default driving-time weight is 0.40 — shown to 2 decimal places.
-    expect(screen.getByText("0.40")).toBeInTheDocument();
+    // Default driving-time weight is 0.40 — shown as a percentage.
+    expect(screen.getByText("40%")).toBeInTheDocument();
   });
 
   it("calls onReset when the user clicks reset", async () => {
@@ -28,7 +28,7 @@ describe("WeightSliders", () => {
     const user = userEvent.setup();
     render(
       <WeightSliders
-        weights={DEFAULT_WEIGHTS}
+        weights={{ ...DEFAULT_WEIGHTS, drivingTime: 0.5, stops: 0.3, walking: 0.1, fairness: 0.1 }}
         onChange={() => {}}
         onReset={onReset}
       />,

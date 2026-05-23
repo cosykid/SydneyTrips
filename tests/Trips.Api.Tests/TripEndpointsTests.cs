@@ -28,11 +28,15 @@ public sealed class TripEndpointsTests : IAsyncLifetime
         ArrivalWindowLatest: new DateTimeOffset(2026, 7, 1, 10, 30, 0, TimeSpan.Zero));
 
     [Fact]
-    public async Task Unauthenticated_request_is_rejected()
+    public async Task Anonymous_request_succeeds_with_empty_list()
     {
+        // No login — anonymous-session middleware stamps a fresh cookie on the first call
+        // and the empty trip list comes back without a 401.
         var client = _factory.CreateClient();
         var response = await client.GetAsync("/trips");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var listed = await response.Content.ReadFromJsonAsync<TripDto[]>();
+        listed.Should().BeEmpty();
     }
 
     [Fact]
@@ -76,8 +80,10 @@ public sealed class TripEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetTrip_returns_404_when_caller_unauthorized()
+    public async Task GetTrip_is_visible_across_sessions()
     {
+        // With anonymous share-link auth, any browser holding the trip id can open the trip —
+        // the cookie session only gates "is this in my list" and "can I delete it".
         var (clientA, _) = await _factory.CreateAuthenticatedClientAsync("a@example.com", displayName: "A");
         var created = await clientA.PostAsJsonAsync("/trips", SampleTrip());
         created.EnsureSuccessStatusCode();
@@ -85,7 +91,31 @@ public sealed class TripEndpointsTests : IAsyncLifetime
 
         var (clientB, _) = await _factory.CreateAuthenticatedClientAsync("b@example.com", displayName: "B");
         var response = await clientB.GetAsync($"/trips/{trip!.Id}");
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task ListTrips_only_returns_trips_owned_by_this_session()
+    {
+        var (clientA, _) = await _factory.CreateAuthenticatedClientAsync();
+        await clientA.PostAsJsonAsync("/trips", SampleTrip("A"));
+
+        var (clientB, _) = await _factory.CreateAuthenticatedClientAsync();
+        var listedB = await clientB.GetFromJsonAsync<TripDto[]>("/trips");
+        // Session B never created a trip, so its list is empty even though A's trip exists.
+        listedB.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeleteTrip_returns_404_for_non_owner_session()
+    {
+        var (clientA, _) = await _factory.CreateAuthenticatedClientAsync();
+        var created = await clientA.PostAsJsonAsync("/trips", SampleTrip());
+        var trip = await created.Content.ReadFromJsonAsync<TripDto>();
+
+        var (clientB, _) = await _factory.CreateAuthenticatedClientAsync();
+        var deleted = await clientB.DeleteAsync($"/trips/{trip!.Id}");
+        deleted.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

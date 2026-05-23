@@ -24,24 +24,23 @@ public static class CalendarEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
         var group = app.MapGroup("/trips/{tripId:guid}/participants/{participantId:guid}")
-            .WithTags("Calendar")
-            .RequireAuthorization();
+            .WithTags("Calendar");
 
         group.MapGet("/calendar.ics", GetCalendarAsync).WithName("ParticipantCalendar");
         return app;
     }
 
-    private static async Task<Results<ContentHttpResult, NotFound, ForbidHttpResult>> GetCalendarAsync(
+    private static async Task<Results<ContentHttpResult, NotFound>> GetCalendarAsync(
         Guid tripId,
         Guid participantId,
         TripsDbContext db,
         TripAuthorizationService authz,
         IGeocodingClient? geocoding,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        // Authorize: must be a trip participant or the trip owner.
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        // No per-user authorisation: anyone with the trip + participant IDs can fetch the
+        // calendar. The share-link UX is the only way these IDs get out anyway.
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -56,14 +55,6 @@ public static class CalendarEndpoints
         if (participant is null)
         {
             return TypedResults.NotFound();
-        }
-
-        // Authorisation tightening: the caller is either the trip owner or the participant themselves.
-        // Other participants of the trip do not get someone else's calendar — that would leak pickup
-        // locations and contact graph beyond what the cost-split / lock endpoints expose.
-        if (currentUser.UserIdGuid != trip.OwnerId && currentUser.UserIdGuid != participant.UserId)
-        {
-            return TypedResults.Forbid();
         }
 
         var solution = await db.Solutions

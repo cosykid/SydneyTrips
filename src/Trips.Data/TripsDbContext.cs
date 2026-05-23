@@ -1,19 +1,18 @@
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Trips.Core.Domain;
 
 namespace Trips.Data;
 
 /// <summary>
-/// Application <see cref="DbContext"/>. Inherits from <see cref="IdentityDbContext{TUser}"/>
-/// so ASP.NET Core Identity tables live in the same database as the domain tables.
+/// Application <see cref="DbContext"/>. No Identity tables — auth is via the anonymous
+/// <c>trips_session</c> cookie issued by <c>AnonymousSessionMiddleware</c>, so there is no
+/// per-user store. Trip ownership is just a GUID column matching the cookie value.
 ///
 /// Picks up entity configurations from the assembly via
 /// <see cref="ModelBuilder.ApplyConfigurationsFromAssembly"/>; configurations live in
 /// <c>Trips.Data/Configurations</c>.
 /// </summary>
-public class TripsDbContext : IdentityDbContext<IdentityUser>
+public class TripsDbContext : DbContext
 {
     public TripsDbContext(DbContextOptions<TripsDbContext> options) : base(options)
     {

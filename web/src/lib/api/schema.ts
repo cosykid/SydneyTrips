@@ -11,26 +11,8 @@ export interface LatLng {
   lng: number;
 }
 
-export interface AuthLoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface AuthRegisterRequest {
-  email: string;
-  password: string;
-  displayName: string;
-}
-
-export interface AuthResponse {
-  /** API returns this as `accessToken` (see Trips.Core.Contracts.AuthTokenResponse). */
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: IsoDateTime;
-  userId: Uuid;
-  email: string;
-  displayName: string;
-}
+// Auth types removed — the API now uses an anonymous-session cookie minted by
+// AnonymousSessionMiddleware. No tokens, no login/register payloads.
 
 export type TripStatus = "draft" | "planned" | "in_progress" | "completed";
 
@@ -39,7 +21,8 @@ export interface TripSummary {
   name: string;
   destinationAddress: string;
   destination: LatLng;
-  departAt: IsoDateTime;
+  /** When the user wants to be at the destination (centre of the arrival window). */
+  arriveBy: IsoDateTime;
   arrivalWindowMinutes: number;
   status: TripStatus;
   participantCount: number;
@@ -96,7 +79,7 @@ export interface OptimiseRequest {
   seed?: number;
 }
 
-export type RunStatus = "queued" | "running" | "completed" | "failed";
+export type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export interface RunResource {
   id: Uuid;
@@ -152,7 +135,9 @@ export interface CreateTripRequest {
   name: string;
   destinationAddress: string;
   destination?: LatLng; // optional geocoded pin if frontend resolves
-  departAt: IsoDateTime;
+  /** User's target arrival time. The hook adapter back-computes a sensible
+   *  departAt before sending to the API. */
+  arriveBy: IsoDateTime;
   arrivalWindowMinutes: number;
 }
 

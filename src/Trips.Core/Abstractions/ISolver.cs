@@ -1,3 +1,4 @@
+using NetTopologySuite.Geometries;
 using Trips.Core.Domain;
 
 namespace Trips.Core.Abstractions;
@@ -86,4 +87,9 @@ public sealed record SolverPassenger(
 /// Domain <see cref="Trips.Core.Domain.CandidateNode"/> id, when this row corresponds to one.
 /// Null for driver-origin and destination rows.
 /// </param>
-public sealed record SolverNode(int Index, NodeKind Kind, Guid? CandidateNodeId);
+/// <param name="Location">
+/// WGS84 point for this node (driver home, candidate pickup, or destination). Stamped onto the
+/// produced <see cref="Stop.Location"/> by <c>SolutionBuilder</c>, so it must be the real geometry —
+/// the solver itself ignores it (it works purely off <see cref="SolverInput.TravelMatrix"/>).
+/// </param>
+public sealed record SolverNode(int Index, NodeKind Kind, Guid? CandidateNodeId, Point Location);

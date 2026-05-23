@@ -2,6 +2,9 @@
 # WS7 smoke test: exercise the cost-split, return-leg, what-if, and calendar.ics endpoints
 # end-to-end against a running Trips.Api.
 #
+# Auth: anonymous session cookie (no login). curl's -b/-c flags share a single cookie jar
+# across every call in this script so the first response's Set-Cookie sticks for the rest.
+#
 # Prerequisites:
 #   - infra/docker-compose.yml has been brought up (postgres + redis)
 #   - migrations have been applied (`dotnet ef database update --project src/Trips.Data`)
@@ -13,23 +16,18 @@
 set -euo pipefail
 
 BASE_URL=${BASE_URL:-http://localhost:5000}
-EMAIL="ws7-smoke-$(date +%s)@example.com"
-PASSWORD="password123"
-NAME="WS7 Smoke User"
+JAR=$(mktemp -t ws7-cookies)
+trap 'rm -f "$JAR"' EXIT
+
+# Shared cookie jar means every curl in this script behaves like the same browser tab.
+COOKIE=(-b "$JAR" -c "$JAR")
 
 say() { printf '\n>>> %s\n' "$*"; }
 need_jq() { command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }; }
 need_jq
 
-say "register user"
-curl -sf -X POST "$BASE_URL/auth/register" \
-  -H 'Content-Type: application/json' \
-  -d "$(jq -nc --arg e "$EMAIL" --arg p "$PASSWORD" --arg n "$NAME" \
-        '{email:$e,password:$p,displayName:$n}')" \
-  > /tmp/ws7-register.json
-TOKEN=$(jq -r .accessToken /tmp/ws7-register.json)
-[[ -n "$TOKEN" && "$TOKEN" != "null" ]] || { echo "missing access token" >&2; exit 1; }
-AUTH=(-H "Authorization: Bearer $TOKEN")
+say "prime anonymous session cookie"
+curl -sf "${COOKIE[@]}" "$BASE_URL/healthz" > /dev/null
 
 say "create trip"
 TRIP_PAYLOAD=$(jq -nc \
@@ -46,14 +44,14 @@ TRIP_PAYLOAD=$(jq -nc \
     arrivalWindowLatest:$latest
   }')
 curl -sf -X POST "$BASE_URL/trips" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d "$TRIP_PAYLOAD" > /tmp/ws7-trip.json
 TRIP_ID=$(jq -r .id /tmp/ws7-trip.json)
 echo "trip: $TRIP_ID"
 
 say "add driver + passenger"
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/participants" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d '{
     "displayName":"Driver",
     "homeLongitude":151.2093,
@@ -64,7 +62,7 @@ curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/participants" \
 DRIVER_ID=$(jq -r .id /tmp/ws7-driver.json)
 
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/participants" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d '{
     "displayName":"Passenger",
     "homeLongitude":151.2100,
@@ -75,17 +73,17 @@ curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/participants" \
 PASS_ID=$(jq -r .id /tmp/ws7-passenger.json)
 echo "driver=$DRIVER_ID passenger=$PASS_ID"
 
-say "optimise (heuristic solver — faster than OR-Tools and avoids the FK quirk in Phase B's runner)"
-OPT_PAYLOAD='{"weights":{"driveTime":1,"stopCount":0.5,"walkAndPt":0.5,"arrivalSpread":0.3,"fairness":0.3},"solver":1}'
+say "optimise (OR-Tools = solver 0; pass solver:1 to use the heuristic)"
+OPT_PAYLOAD='{"weights":{"driveTime":1,"stopCount":0.5,"walkAndPt":0.5,"arrivalSpread":0.3,"fairness":0.3},"solver":0}'
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/optimise" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d "$OPT_PAYLOAD" > /tmp/ws7-run.json
 RUN_ID=$(jq -r .runId /tmp/ws7-run.json)
 echo "run: $RUN_ID"
 
 say "poll run until complete"
 for _ in $(seq 1 60); do
-  STATUS=$(curl -sf "$BASE_URL/trips/$TRIP_ID/runs/$RUN_ID" "${AUTH[@]}" | jq -r .run.status)
+  STATUS=$(curl -sf "$BASE_URL/trips/$TRIP_ID/runs/$RUN_ID" "${COOKIE[@]}" | jq -r .run.status)
   echo "  status=$STATUS"
   # OptimisationStatus: Completed = 2 (also accept "Completed" string for future-proofing).
   [[ "$STATUS" == "2" || "$STATUS" == "Completed" ]] && break
@@ -95,32 +93,32 @@ done
 
 say "lock solution"
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/lock-solution" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg r "$RUN_ID" '{runId:$r,paretoIndex:0}')" \
   > /tmp/ws7-lock.json
 echo "locked solution id: $(jq -r .lockedSolutionId /tmp/ws7-lock.json)"
 
 say "cost-split (defaults)"
-curl -sf "$BASE_URL/trips/$TRIP_ID/cost-split" "${AUTH[@]}" | jq
+curl -sf "$BASE_URL/trips/$TRIP_ID/cost-split" "${COOKIE[@]}" | jq
 
 say "cost-split (override fuel + tolls)"
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/cost-split" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d '{"fuelPricePerLitre":1.99,"fuelEconomyLPer100Km":7.5,"tolls":[]}' | jq
 
-say "return-leg (two passengers in one cluster)"
+say "return-leg (one passenger)"
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/return-leg" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg p1 "$PASS_ID" \
     '{requests:[{participantId:$p1,desiredDeparture:"2026-05-23T17:00:00Z",dropoffLongitude:151.21,dropoffLatitude:-33.87}]}')" | jq '.solutions | length'
 
-say "what-if (no drop, new weights)"
+say "what-if (new weights)"
 curl -sf -X POST "$BASE_URL/trips/$TRIP_ID/whatif" \
-  "${AUTH[@]}" -H 'Content-Type: application/json' \
+  "${COOKIE[@]}" -H 'Content-Type: application/json' \
   -d '{"newWeights":{"driveTime":0.5,"stopCount":0.2,"walkAndPt":1.0,"arrivalSpread":0.3,"fairness":0.3}}' | jq
 
 say "calendar.ics for the driver"
-curl -sf "$BASE_URL/trips/$TRIP_ID/participants/$DRIVER_ID/calendar.ics" "${AUTH[@]}" -o /tmp/ws7.ics
+curl -sf "$BASE_URL/trips/$TRIP_ID/participants/$DRIVER_ID/calendar.ics" "${COOKIE[@]}" -o /tmp/ws7.ics
 head -10 /tmp/ws7.ics
 grep -q 'BEGIN:VEVENT' /tmp/ws7.ics && echo "  VEVENT present"
 

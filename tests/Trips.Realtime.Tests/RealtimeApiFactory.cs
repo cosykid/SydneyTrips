@@ -1,5 +1,4 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -11,16 +10,15 @@ using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
 using Trips.Api.Stubs;
 using Trips.Core.Abstractions;
-using Trips.Core.Contracts;
 using Trips.Data;
 
 namespace Trips.Realtime.Tests;
 
 /// <summary>
 /// Hosts the full Trips.Api WebApplicationFactory against a Postgres+PostGIS Testcontainer, then
-/// exposes utilities for opening authenticated SignalR connections at <c>/hubs/trip</c>. The hub
-/// tests need the real authentication + DI pipeline because the hub depends on
-/// <c>TripAuthorizationService</c> + identity claims — there's no cheap stub for that.
+/// exposes utilities for opening anonymous SignalR connections at <c>/hubs/trip</c>. With
+/// anonymous-session auth there's no JWT — each test client just needs a cookie jar so its
+/// <c>trips_session</c> cookie sticks across requests.
 /// </summary>
 public sealed class RealtimeApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -65,9 +63,6 @@ public sealed class RealtimeApiFactory : WebApplicationFactory<Program>, IAsyncL
                 ["ConnectionStrings:Trips"] = ConnectionString,
                 // Redis not configured — SignalR falls back to in-memory backplane, which is fine for tests.
                 ["ConnectionStrings:Redis"] = string.Empty,
-                ["Auth:JwtKey"] = "this-is-a-very-long-test-key-for-jwt-signing-purposes-32-bytes!!",
-                ["Auth:Issuer"] = "SydneyTrips.Tests",
-                ["Auth:Audience"] = "SydneyTrips.Tests.Client",
                 ["Optimisation:MaxConcurrent"] = "2",
                 // Worker disabled in hub tests to keep poll loops from interfering. GtfsWorker tests
                 // construct the worker manually.
@@ -85,12 +80,7 @@ public sealed class RealtimeApiFactory : WebApplicationFactory<Program>, IAsyncL
             services.AddSingleton<IGoogleRoutesClient, StubGoogleRoutesClient>();
             services.AddSingleton<IGeocodingClient, StubGeocodingClient>();
 
-            // Re-register the DbContext to disable Npgsql command-execution-strategy retries and
-            // enable detailed error reporting. The default registration set up by AddTripsData
-            // was producing transient FK violations against the Identity tables under parallel
-            // cross-assembly test runs — the symptom looked like a phantom AspNetUserTokens
-            // insert before the AspNetUsers row was committed. Pinning a fresh DbContext options
-            // here side-steps the issue and gives us readable diagnostics if anything regresses.
+            // Re-register the DbContext with detailed errors for readable diagnostics.
             services.RemoveAll<DbContextOptions<TripsDbContext>>();
             services.AddDbContext<TripsDbContext>(opts =>
             {
@@ -107,28 +97,82 @@ public sealed class RealtimeApiFactory : WebApplicationFactory<Program>, IAsyncL
         var db = scope.ServiceProvider.GetRequiredService<TripsDbContext>();
         await db.Database.ExecuteSqlRawAsync("""
             TRUNCATE TABLE "stops", "driver_routes", "solutions", "optimisation_runs",
-                "candidate_nodes", "participants", "trip_events", "trips",
-                "AspNetUserTokens", "AspNetUserRoles", "AspNetUserLogins", "AspNetUserClaims",
-                "AspNetUsers", "AspNetRoleClaims", "AspNetRoles"
+                "candidate_nodes", "participants", "trip_events", "trips"
             RESTART IDENTITY CASCADE;
             """).ConfigureAwait(false);
     }
 
-    /// <summary>Register a user, return an authenticated client + access token + user id.</summary>
-    public async Task<AuthenticatedUser> CreateAuthenticatedUserAsync(
-        string email,
-        string password = "password123",
-        string displayName = "Tester")
+    /// <summary>
+    /// Returns an HttpClient that keeps the anonymous <c>trips_session</c> cookie across calls,
+    /// plus the parsed session GUID after the cookie is primed. Equivalent to one browser.
+    /// </summary>
+    public async Task<AnonymousClient> CreateClientSessionAsync()
     {
-        var client = CreateClient();
-        var response = await client.PostAsJsonAsync("/auth/register", new RegisterRequest(email, password, displayName))
-            .ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var tokens = await response.Content.ReadFromJsonAsync<AuthTokenResponse>().ConfigureAwait(false);
-        ArgumentNullException.ThrowIfNull(tokens);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        return new AuthenticatedUser(client, tokens.AccessToken, Guid.Parse(tokens.UserId), email, displayName);
+        var handler = new CookieJarHandler();
+        var client = CreateDefaultClient(handler);
+
+        // Prime the session cookie via /healthz so subsequent calls all carry the same GUID.
+        var primer = await client.GetAsync("/healthz").ConfigureAwait(false);
+        primer.EnsureSuccessStatusCode();
+
+        return new AnonymousClient(client, handler, handler.ExtractSessionId());
     }
 }
 
-public sealed record AuthenticatedUser(HttpClient HttpClient, string AccessToken, Guid UserId, string Email, string DisplayName);
+/// <summary>Wraps an HttpClient + its cookie jar so test code can hand the cookie to SignalR too.</summary>
+public sealed class AnonymousClient
+{
+    internal AnonymousClient(HttpClient httpClient, CookieJarHandler cookieJar, Guid sessionId)
+    {
+        HttpClient = httpClient;
+        CookieJar = cookieJar;
+        SessionId = sessionId;
+    }
+
+    public HttpClient HttpClient { get; }
+    public Guid SessionId { get; }
+    internal CookieJarHandler CookieJar { get; }
+}
+
+/// <summary>
+/// DelegatingHandler that keeps the anonymous-session cookie alive across requests. Test clients
+/// don't get a CookieContainer by default, so we hand-roll one here.
+/// </summary>
+internal sealed class CookieJarHandler : DelegatingHandler
+{
+    public CookieContainer Container { get; } = new();
+
+    public Guid ExtractSessionId()
+    {
+        foreach (Cookie cookie in Container.GetAllCookies())
+        {
+            if (cookie.Name == "trips_session" && Guid.TryParseExact(cookie.Value, "N", out var g))
+            {
+                return g;
+            }
+        }
+        return Guid.Empty;
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var uri = request.RequestUri ?? new Uri("http://localhost");
+        var header = Container.GetCookieHeader(uri);
+        if (!string.IsNullOrEmpty(header))
+        {
+            request.Headers.Add("Cookie", header);
+        }
+
+        var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.Headers.TryGetValues("Set-Cookie", out var setCookies))
+        {
+            foreach (var sc in setCookies)
+            {
+                Container.SetCookies(uri, sc);
+            }
+        }
+
+        return response;
+    }
+}

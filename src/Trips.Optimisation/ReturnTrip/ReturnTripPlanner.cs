@@ -133,7 +133,7 @@ public sealed class ReturnTripPlanner : IReturnTripPlanner
         var passengers = new List<SolverPassenger>();
 
         // Node 0 = the original destination (origin of the return leg).
-        nodes.Add(new SolverNode(Index: 0, Kind: NodeKind.TrainStation, CandidateNodeId: null));
+        nodes.Add(new SolverNode(Index: 0, Kind: NodeKind.TrainStation, CandidateNodeId: null, Location: trip.DestinationLocation));
         var originIndex = 0;
 
         // Drivers are the trip's car-owners; they start at the origin (i.e. trip destination).
@@ -159,7 +159,7 @@ public sealed class ReturnTripPlanner : IReturnTripPlanner
         for (var i = 0; i < cluster.Count; i++)
         {
             var idx = nodes.Count;
-            nodes.Add(new SolverNode(idx, NodeKind.Home, CandidateNodeId: Guid.NewGuid()));
+            nodes.Add(new SolverNode(idx, NodeKind.Home, CandidateNodeId: Guid.NewGuid(), Location: cluster[i].DesiredDropoff));
             passengerNodes.Add(idx);
             passengerPoints.Add(cluster[i].DesiredDropoff);
             passengers.Add(new SolverPassenger(
@@ -168,9 +168,9 @@ public sealed class ReturnTripPlanner : IReturnTripPlanner
                 WalkPtMinsByNodeIndex: new[] { 0 }));
         }
         // Destination = centroid of all drop-offs.
-        var destIdx = nodes.Count;
-        nodes.Add(new SolverNode(destIdx, NodeKind.TrainStation, CandidateNodeId: null));
         var centroid = ComputeCentroid(passengerPoints);
+        var destIdx = nodes.Count;
+        nodes.Add(new SolverNode(destIdx, NodeKind.TrainStation, CandidateNodeId: null, Location: centroid));
 
         // Build a haversine matrix. Indices: 0 = trip destination (origin), 1..N = passenger drops, last = centroid.
         var locations = new Point[nodes.Count];

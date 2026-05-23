@@ -1,11 +1,6 @@
-using System.Text;
 using FluentValidation;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Formatting.Compact;
 using Trips.Api.Auth;
@@ -60,63 +55,14 @@ if (!builder.Services.Any(d => d.ServiceType == typeof(ISolver)))
     builder.Services.AddSingleton<ISolver, StubSolver>();
 }
 
-// Identity over Postgres — uses the same TripsDbContext.
-builder.Services
-    .AddIdentityCore<IdentityUser>(options =>
-    {
-        options.Password.RequireDigit = false;
-        options.Password.RequireLowercase = false;
-        options.Password.RequireUppercase = false;
-        options.Password.RequireNonAlphanumeric = false;
-        options.Password.RequiredLength = 8;
-        options.User.RequireUniqueEmail = true;
-    })
-    .AddEntityFrameworkStores<TripsDbContext>()
-    .AddDefaultTokenProviders();
-
-// JWT bearer authentication.
-builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
-
-// Apply an in-memory fallback for the signing key when the configuration source doesn't supply one.
-// This keeps `dotnet run` painless in dev; production should always set Auth:JwtKey via secrets.
-if (string.IsNullOrWhiteSpace(builder.Configuration[$"{AuthOptions.SectionName}:JwtKey"]))
-{
-    var generated = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
-    builder.Configuration[$"{AuthOptions.SectionName}:JwtKey"] = generated;
-}
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        // SignalR clients can't set the Authorization header on a WebSocket upgrade, so they pass
-        // the JWT via the standard `access_token` query string. Pull it through here so the hub
-        // sees an authenticated principal in Context.User.
-        options.Events = new JwtBearerEvents
-        {
-            OnMessageReceived = ctx =>
-            {
-                var accessToken = ctx.Request.Query["access_token"];
-                var path = ctx.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-                {
-                    ctx.Token = accessToken;
-                }
-                return Task.CompletedTask;
-            },
-        };
-    });
-
-// PostConfigure resolves the latest AuthOptions snapshot so issuer and validator agree on the key
-// (matters in tests where WebApplicationFactory injects a different key after the builder runs).
-builder.Services.AddSingleton<Microsoft.Extensions.Options.IPostConfigureOptions<JwtBearerOptions>, ConfigureJwtBearerOptions>();
-builder.Services.AddAuthorization();
-
-builder.Services.AddScoped<AuthService>();
-builder.Services.AddSingleton<JwtTokenService>();
+// Anonymous-session cookie: every browser gets a long-lived GUID in `trips_session`. Replaces
+// JWT bearer + ASP.NET Identity entirely. Trip ownership compares that GUID against trip.OwnerId;
+// non-owners can still read/modify the trip (anonymous share-link model), but only the owner
+// session can delete.
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<CurrentUser>();
+builder.Services.AddScoped<CurrentSession>();
 builder.Services.AddScoped<TripAuthorizationService>();
-// Same instance backs both the endpoint-side check and the hub-side check.
+// Same instance backs both the endpoint-side lookup and the hub-side lookup.
 builder.Services.AddScoped<ITripHubAuthorizer>(sp => sp.GetRequiredService<TripAuthorizationService>());
 builder.Services.AddScoped<ParticipantCandidateNodeService>();
 
@@ -148,7 +94,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen();
 
-// CORS — Next.js dev origin.
+// CORS — Next.js dev origin. AllowCredentials so the cookie flows on cross-origin XHR.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(DevCorsPolicy, p => p
@@ -172,8 +118,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(DevCorsPolicy);
-app.UseAuthentication();
-app.UseAuthorization();
+// Anonymous-session middleware runs early so endpoints and the SignalR hub both see the cookie
+// GUID via CurrentSession. Set-Cookie on the response is appended before the body is flushed.
+app.UseMiddleware<AnonymousSessionMiddleware>();
 
 app.MapGet("/healthz", async (TripsDbContext db, CancellationToken ct) =>
     {
@@ -183,10 +130,8 @@ app.MapGet("/healthz", async (TripsDbContext db, CancellationToken ct) =>
             : Results.Json(new { status = "degraded", detail = "database unreachable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
     })
     .WithName("HealthCheck")
-    .WithTags("Health")
-    .AllowAnonymous();
+    .WithTags("Health");
 
-app.MapAuth();
 app.MapTrips();
 app.MapParticipants();
 app.MapOptimisation();
@@ -224,43 +169,6 @@ internal sealed class UnhandledExceptionHandler : IExceptionHandler
         }, cancellationToken: cancellationToken);
 
         return true;
-    }
-}
-
-/// <summary>
-/// Resolves <see cref="AuthOptions"/> from the latest <see cref="Microsoft.Extensions.Options.IOptions{T}"/>
-/// snapshot when configuring the JWT bearer validation parameters. Decouples validator setup from
-/// the order in which configuration providers are stacked — important under
-/// <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{T}"/>.
-/// </summary>
-internal sealed class ConfigureJwtBearerOptions : Microsoft.Extensions.Options.IPostConfigureOptions<JwtBearerOptions>
-{
-    private readonly Microsoft.Extensions.Options.IOptions<AuthOptions> _authOptions;
-
-    public ConfigureJwtBearerOptions(Microsoft.Extensions.Options.IOptions<AuthOptions> authOptions)
-    {
-        _authOptions = authOptions;
-    }
-
-    public void PostConfigure(string? name, JwtBearerOptions options)
-    {
-        var auth = _authOptions.Value;
-        if (string.IsNullOrWhiteSpace(auth.JwtKey))
-        {
-            throw new InvalidOperationException("Auth:JwtKey is not configured.");
-        }
-
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = auth.Issuer,
-            ValidAudience = auth.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(auth.JwtKey)),
-            ClockSkew = TimeSpan.FromSeconds(30),
-        };
     }
 }
 

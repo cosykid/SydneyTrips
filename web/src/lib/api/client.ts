@@ -1,12 +1,11 @@
 // Thin fetch wrapper for the Trips API.
 //
-// The browser never sees the JWT directly — every API call goes through the
-// Next.js route-handler proxy at /api/proxy/* which reads the httpOnly session
-// cookie server-side and forwards the bearer token. This avoids storing the
-// JWT in localStorage and lets `proxy.ts` enforce auth on /trips/*.
-//
-// In tests or non-browser contexts (e.g. server components) callers can pass
-// an explicit `bearerToken` and a target `baseUrl` to skip the proxy.
+// Every browser call goes through the Next.js route-handler proxy at
+// /api/proxy/* so the anonymous `trips_session` cookie stays same-origin (the
+// API issues the cookie, the proxy mirrors Set-Cookie back, and subsequent
+// requests carry it). No JWT, no localStorage token — the cookie is the
+// session, and on a 401 we just bubble the error (no redirect because there's
+// no login page to redirect to).
 
 export class ApiError extends Error {
   status: number;
@@ -25,21 +24,27 @@ export interface ApiRequestInit extends Omit<RequestInit, "body" | "headers"> {
   headers?: Record<string, string>;
   /** Override the base URL (server-only paths). Defaults to the proxy. */
   baseUrl?: string;
-  /** Explicit bearer token. Only used when bypassing the proxy. */
+  /** Explicit bearer token. Only used by callers that genuinely need one (none
+   * in this app since auth was removed) — kept for backwards-compat with any
+   * lingering server-side flows. */
   bearerToken?: string;
-  /** Treat 401 as a regular error instead of triggering a redirect. */
+  /** No-op kept for backwards-compat with callers — auth has been removed and
+   * 401 is just an error now. */
   ignoreUnauthorized?: boolean;
 }
 
 function getDefaultBaseUrl(): string {
-  // Browser side: hit the same-origin proxy that injects the JWT.
+  // Browser side: hit the same-origin proxy so the trips_session cookie flows.
   if (typeof window !== "undefined") return "/api/proxy";
   // Server side fallback (mostly used by the proxy handler itself).
   return process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 }
 
 export async function apiFetch<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
+  // `ignoreUnauthorized` is accepted for backwards-compat but no longer
+  // changes behaviour (auth was removed).
   const { body, headers, baseUrl, bearerToken, ignoreUnauthorized, ...rest } = init;
+  void ignoreUnauthorized;
   const url = `${baseUrl ?? getDefaultBaseUrl()}${path}`;
 
   const finalHeaders: Record<string, string> = {
@@ -55,14 +60,6 @@ export async function apiFetch<T>(path: string, init: ApiRequestInit = {}): Prom
     body: body !== undefined ? JSON.stringify(body) : undefined,
     credentials: "include",
   });
-
-  if (response.status === 401 && !ignoreUnauthorized && typeof window !== "undefined") {
-    // Boot back to /login. Route handler proxies also drop the session cookie
-    // when the upstream rejects.
-    const next = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/login?next=${next}`;
-    throw new ApiError(401, "Unauthorized", null);
-  }
 
   const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");

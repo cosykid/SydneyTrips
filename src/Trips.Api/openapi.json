@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5000/"
+      "url": "http://localhost:5099/"
     }
   ],
   "paths": {
@@ -19,96 +19,6 @@
         "responses": {
           "200": {
             "description": "OK"
-          }
-        }
-      }
-    },
-    "/auth/register": {
-      "post": {
-        "tags": [
-          "Auth"
-        ],
-        "operationId": "Register",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthTokenResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/auth/login": {
-      "post": {
-        "tags": [
-          "Auth"
-        ],
-        "operationId": "Login",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthTokenResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/auth/refresh": {
-      "post": {
-        "tags": [
-          "Auth"
-        ],
-        "operationId": "Refresh",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthTokenResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -216,6 +126,50 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/trips/{id}/destination": {
+      "patch": {
+        "tags": [
+          "Trips"
+        ],
+        "operationId": "UpdateTripDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTripDestinationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TripDto"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found"
@@ -896,38 +850,6 @@
           }
         }
       },
-      "AuthTokenResponse": {
-        "required": [
-          "accessToken",
-          "refreshToken",
-          "expiresAt",
-          "userId",
-          "email",
-          "displayName"
-        ],
-        "type": "object",
-        "properties": {
-          "accessToken": {
-            "type": "string"
-          },
-          "refreshToken": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "userId": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "displayName": {
-            "type": "string"
-          }
-        }
-      },
       "CandidateNodeDto": {
         "required": [
           "id",
@@ -1000,7 +922,13 @@
         }
       },
       "CandidateNodeKindDto": {
-        "type": "integer"
+        "enum": [
+          "home",
+          "trainStation",
+          "busStop",
+          "wharf",
+          "lightRailStop"
+        ]
       },
       "CostSplitEntry": {
         "required": [
@@ -1257,7 +1185,20 @@
         }
       },
       "EventKind": {
-        "type": "integer"
+        "enum": [
+          "tripCreated",
+          "participantAdded",
+          "participantRemoved",
+          "optimisationStarted",
+          "optimisationCompleted",
+          "optimisationFailed",
+          "solutionLocked",
+          "driverDeparted",
+          "driverPositionUpdated",
+          "driverLate",
+          "passengerAtStop",
+          "routeRecomputed"
+        ]
       },
       "LockSolutionRequest": {
         "required": [
@@ -1277,21 +1218,6 @@
               "string"
             ],
             "format": "int32"
-          }
-        }
-      },
-      "LoginRequest": {
-        "required": [
-          "email",
-          "password"
-        ],
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
           }
         }
       },
@@ -1482,7 +1408,13 @@
         }
       },
       "OptimisationStatus": {
-        "type": "integer"
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ]
       },
       "OptimiseRequest": {
         "required": [
@@ -1502,7 +1434,6 @@
         "required": [
           "id",
           "tripId",
-          "userId",
           "displayName",
           "homeLongitude",
           "homeLatitude",
@@ -1517,10 +1448,6 @@
             "format": "uuid"
           },
           "tripId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "userId": {
             "type": "string",
             "format": "uuid"
           },
@@ -1563,7 +1490,6 @@
         "required": [
           "id",
           "tripId",
-          "userId",
           "displayName",
           "homeLongitude",
           "homeLatitude",
@@ -1579,10 +1505,6 @@
             "format": "uuid"
           },
           "tripId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "userId": {
             "type": "string",
             "format": "uuid"
           },
@@ -1658,36 +1580,6 @@
               "string"
             ],
             "format": "double"
-          }
-        }
-      },
-      "RefreshRequest": {
-        "required": [
-          "refreshToken"
-        ],
-        "type": "object",
-        "properties": {
-          "refreshToken": {
-            "type": "string"
-          }
-        }
-      },
-      "RegisterRequest": {
-        "required": [
-          "email",
-          "password",
-          "displayName"
-        ],
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          },
-          "displayName": {
-            "type": "string"
           }
         }
       },
@@ -1804,8 +1696,11 @@
         }
       },
       "SolverKind": {
-        "type": "integer",
-        "default": 0
+        "enum": [
+          "orTools",
+          "heuristic"
+        ],
+        "default": "orTools"
       },
       "StopDto": {
         "required": [
@@ -2109,6 +2004,35 @@
           }
         }
       },
+      "UpdateTripDestinationRequest": {
+        "required": [
+          "destinationName",
+          "destinationLongitude",
+          "destinationLatitude"
+        ],
+        "type": "object",
+        "properties": {
+          "destinationName": {
+            "type": "string"
+          },
+          "destinationLongitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "destinationLatitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "WhatIfRequest": {
         "required": [
           "dropParticipantIds",
@@ -2153,9 +2077,6 @@
   "tags": [
     {
       "name": "Health"
-    },
-    {
-      "name": "Auth"
     },
     {
       "name": "Trips"

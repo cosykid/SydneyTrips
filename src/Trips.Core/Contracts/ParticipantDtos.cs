@@ -4,7 +4,6 @@ namespace Trips.Core.Contracts;
 public sealed record ParticipantDto(
     Guid Id,
     Guid TripId,
-    Guid UserId,
     string DisplayName,
     double HomeLongitude,
     double HomeLatitude,
@@ -18,7 +17,6 @@ public sealed record ParticipantDto(
 public sealed record ParticipantWithNodesDto(
     Guid Id,
     Guid TripId,
-    Guid UserId,
     string DisplayName,
     double HomeLongitude,
     double HomeLatitude,
@@ -44,6 +42,7 @@ public sealed record CandidateNodeDto(
 /// <summary>Wire-stable name for <see cref="Trips.Core.Domain.NodeKind"/>. We expose
 /// strings rather than ints so the frontend can switch on values without depending on
 /// the enum ordinal.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(Trips.Core.Serialization.CamelCaseEnumConverter))]
 public enum CandidateNodeKindDto
 {
     Home = 0,

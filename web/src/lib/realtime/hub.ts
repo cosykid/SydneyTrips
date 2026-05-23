@@ -1,20 +1,18 @@
 // SignalR client wrapper for the TripHub.
 //
-// Architecture choice — SignalR cannot ride the same-origin Next.js proxy
-// because Next route handlers don't tunnel WebSocket upgrades. Instead, we:
+// Architecture choice — with anonymous-session-cookie auth, the SignalR
+// transport rides the same Next.js route-handler proxy as every HTTP call:
 //
-//   1. Fetch a per-user access token from /api/realtime/token (server-side
-//      route handler that reads the httpOnly session cookie and returns the
-//      API JWT + the absolute hub URL).
-//   2. Connect SignalR directly to the upstream API hub, passing the JWT via
-//      `accessTokenFactory` so the WS upgrade carries it on the query string.
-//      (The Trips API CORS layer must allow the web origin and the
-//      `Authorization` header — see WS5 docs.)
+//   /api/proxy/hubs/trip
 //
-// The wrapper is tolerant of WS5 not being merged: if `/hubs/trip/negotiate`
-// returns 404 or the token endpoint 502s, we land in `disconnected` with the
-// error available so the UI can show "live coordination unavailable".
-// Tests inject a `connectionFactory` to avoid the real dependency.
+// The proxy forwards the request (cookie and all) to the upstream API. Because
+// Next.js route handlers can't tunnel WebSocket upgrades, we force the
+// `LongPolling` transport — SignalR's pure-HTTP fallback. Negotiate + each
+// long-poll round-trip flows through the proxy, the trips_session cookie goes
+// along, and the hub recognises the caller via the cookie just like every
+// other endpoint. No token fetch, no Authorization header, no JWT.
+//
+// Tests inject a `connectionFactory` to skip SignalR entirely.
 
 "use client";
 
@@ -26,6 +24,7 @@ import {
   useState,
 } from "react";
 import {
+  HttpTransportType,
   HubConnection,
   HubConnectionBuilder,
   HubConnectionState,
@@ -85,13 +84,8 @@ export interface HubConnectionLike {
 export interface UseTripHubOptions {
   /** Override the SignalR connection — used by tests + storybook. */
   connectionFactory?: () => HubConnectionLike;
-  /** Disable auto-connect (component opted out, e.g. unauthenticated). */
+  /** Disable auto-connect (component opted out, e.g. when there's no tripId yet). */
   enabled?: boolean;
-  /**
-   * Override the token-fetcher (tests use this to skip the /api/realtime/token
-   * fetch; production builds use the default).
-   */
-  tokenFetcher?: () => Promise<{ hubUrl: string; accessToken: string }>;
 }
 
 export interface TripHubApi {
@@ -102,31 +96,22 @@ export interface TripHubApi {
   onPassengerAtStop: (handler: (p: PassengerAtStopPayload) => void) => () => void;
   onRouteRecomputed: (handler: (p: RouteRecomputedPayload) => void) => () => void;
   onTripStatusChanged: (handler: (p: TripStatusChangedPayload) => void) => () => void;
-  publishDriverPosition: (lat: number, lng: number) => Promise<void>;
-  passengerCheckIn: (stopId: string) => Promise<void>;
+  /** Driver client publishes a position update. <c>driverParticipantId</c>
+   * identifies which trip participant the caller is. */
+  publishDriverPosition: (driverParticipantId: string, lat: number, lng: number) => Promise<void>;
+  /** Passenger client checks in at a stop. <c>participantId</c> identifies the
+   * caller's participant id on this trip. */
+  passengerCheckIn: (participantId: string, stopId: string) => Promise<void>;
 }
 
-async function defaultTokenFetcher(): Promise<{ hubUrl: string; accessToken: string }> {
-  const res = await fetch("/api/realtime/token", {
-    credentials: "include",
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`token fetch failed: ${res.status} ${text}`);
-  }
-  return (await res.json()) as { hubUrl: string; accessToken: string };
-}
-
-function defaultConnectionFactory(
-  hubUrl: string,
-  accessToken: string,
-): HubConnectionLike {
+function defaultConnectionFactory(): HubConnectionLike {
+  // Same-origin proxy URL — the trips_session cookie rides along on negotiate
+  // + every long-poll round-trip. LongPolling is the only transport that
+  // survives our Next.js route-handler proxy (which can't tunnel WS upgrades).
   const conn: HubConnection = new HubConnectionBuilder()
-    .withUrl(hubUrl, {
-      // SignalR appends the token to the negotiate query string and the WS
-      // URL. The Trips API parses it via its standard JWT bearer middleware.
-      accessTokenFactory: () => accessToken,
+    .withUrl("/api/proxy/hubs/trip", {
+      transport: HttpTransportType.LongPolling,
+      withCredentials: true,
     })
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Warning)
@@ -153,7 +138,7 @@ export function useTripHub(
   tripId: string | undefined,
   options: UseTripHubOptions = {},
 ): TripHubApi {
-  const { connectionFactory, enabled = true, tokenFetcher } = options;
+  const { connectionFactory, enabled = true } = options;
   // Connection state lives in plain React state — setStatus is invoked from
   // the effect via stable callbacks below, never directly during render.
   const [status, setStatus] = useState<ConnectionStatus>("idle");
@@ -181,13 +166,9 @@ export function useTripHub(
     });
 
     async function go(): Promise<void> {
-      let connection: HubConnectionLike;
-      if (connectionFactory) {
-        connection = connectionFactory();
-      } else {
-        const { hubUrl, accessToken } = await (tokenFetcher ?? defaultTokenFetcher)();
-        connection = defaultConnectionFactory(hubUrl, accessToken);
-      }
+      const connection: HubConnectionLike = connectionFactory
+        ? connectionFactory()
+        : defaultConnectionFactory();
 
       connection.onreconnecting(() => {
         if (cancelled) return;
@@ -260,7 +241,7 @@ export function useTripHub(
         });
       }
     };
-  }, [tripId, enabled, connectionFactory, tokenFetcher]);
+  }, [tripId, enabled, connectionFactory]);
 
   // Stable subscription registrar — callers can hand it any handler without
   // worrying about identity churn (subscribe returns a deterministic
@@ -279,11 +260,11 @@ export function useTripHub(
   );
 
   const publishDriverPosition = useCallback(
-    async (lat: number, lng: number): Promise<void> => {
+    async (driverParticipantId: string, lat: number, lng: number): Promise<void> => {
       const c = connectionRef.current;
       if (!c || c.state !== HubConnectionState.Connected) return;
       try {
-        await c.invoke("PublishDriverPositionAsync", tripId, lat, lng);
+        await c.invoke("PublishDriverPositionAsync", tripId, driverParticipantId, lat, lng);
       } catch (err) {
         console.warn("[trip-hub] publishDriverPosition failed", err);
       }
@@ -292,7 +273,7 @@ export function useTripHub(
   );
 
   const passengerCheckIn = useCallback(
-    async (stopId: string): Promise<void> => {
+    async (participantId: string, stopId: string): Promise<void> => {
       const c = connectionRef.current;
       if (!c || c.state !== HubConnectionState.Connected) {
         console.warn(
@@ -301,7 +282,7 @@ export function useTripHub(
         return;
       }
       try {
-        await c.invoke("PassengerCheckInAsync", tripId, stopId);
+        await c.invoke("PassengerCheckInAsync", tripId, participantId, stopId);
       } catch (err) {
         console.warn("[trip-hub] passengerCheckIn failed", err);
       }

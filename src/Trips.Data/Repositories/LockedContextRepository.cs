@@ -63,7 +63,7 @@ internal sealed class LockedContextRepository : ILockedContextRepository
         foreach (var driver in driverParticipants)
         {
             var idx = nodes.Count;
-            nodes.Add(new SolverNode(idx, NodeKind.Home, CandidateNodeId: null));
+            nodes.Add(new SolverNode(idx, NodeKind.Home, CandidateNodeId: null, Location: driver.Home));
             drivers.Add(new SolverDriver(driver.Id, idx, driver.Seats));
         }
 
@@ -78,7 +78,7 @@ internal sealed class LockedContextRepository : ILockedContextRepository
             {
                 if (candidateLookup.ContainsKey(cn.Id)) continue;
                 var idx = nodes.Count;
-                nodes.Add(new SolverNode(idx, cn.Kind, CandidateNodeId: cn.Id));
+                nodes.Add(new SolverNode(idx, cn.Kind, CandidateNodeId: cn.Id, Location: cn.Location));
                 candidateLookup[cn.Id] = idx;
             }
         }
@@ -100,13 +100,13 @@ internal sealed class LockedContextRepository : ILockedContextRepository
 
         // Destination row.
         var destIndex = nodes.Count;
-        nodes.Add(new SolverNode(destIndex, NodeKind.TrainStation, CandidateNodeId: null));
+        nodes.Add(new SolverNode(destIndex, NodeKind.TrainStation, CandidateNodeId: null, Location: trip.DestinationLocation));
 
         // Synthesise a default driver if there are none (matches runner's fallback).
         if (drivers.Count == 0 && trip.Participants.Count > 0)
         {
             var idx = nodes.Count;
-            nodes.Add(new SolverNode(idx, NodeKind.Home, null));
+            nodes.Add(new SolverNode(idx, NodeKind.Home, null, trip.Participants[0].Home));
             drivers.Add(new SolverDriver(trip.Participants[0].Id, idx, Math.Max(1, trip.Participants.Count)));
         }
 

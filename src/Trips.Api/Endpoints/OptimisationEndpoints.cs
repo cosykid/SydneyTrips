@@ -14,7 +14,7 @@ public static class OptimisationEndpoints
     public static IEndpointRouteBuilder MapOptimisation(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        var group = app.MapGroup("/trips/{tripId:guid}").WithTags("Optimisation").RequireAuthorization();
+        var group = app.MapGroup("/trips/{tripId:guid}").WithTags("Optimisation");
 
         group.MapPost("/optimise", OptimiseAsync)
             .AddEndpointFilter<ValidationFilter<OptimiseRequest>>()
@@ -32,11 +32,10 @@ public static class OptimisationEndpoints
         TripAuthorizationService authz,
         IOptimisationRunRepository runs,
         IOptimisationJobQueue queue,
-        CurrentUser currentUser,
         IClock clock,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -63,10 +62,9 @@ public static class OptimisationEndpoints
         Guid runId,
         TripAuthorizationService authz,
         IOptimisationRunRepository runs,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -93,10 +91,9 @@ public static class OptimisationEndpoints
         IOptimisationRunRepository runs,
         ITripRepository trips,
         ISolver solver,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -153,14 +150,14 @@ internal static class ParetoSupport
     /// </summary>
     public static SolverInput BuildSolverInput(Trip trip, Guid runId, ObjectiveWeights weights)
     {
-        var nodes = new List<SolverNode> { new(0, NodeKind.Home, null) };
+        var nodes = new List<SolverNode> { new(0, NodeKind.Home, null, trip.DestinationLocation) };
         var drivers = new List<SolverDriver>();
         var passengers = new List<SolverPassenger>();
         var index = 1;
         foreach (var p in trip.Participants)
         {
             var idx = index++;
-            nodes.Add(new SolverNode(idx, NodeKind.Home, null));
+            nodes.Add(new SolverNode(idx, NodeKind.Home, null, p.Home));
             if (p.HasCar)
             {
                 drivers.Add(new SolverDriver(p.Id, idx, p.Seats));

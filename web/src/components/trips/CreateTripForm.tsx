@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -10,14 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCreateTrip } from "@/lib/api/hooks";
-import { GeocodePreview } from "./GeocodePreview";
+import { PlaceAutocomplete, type SelectedPlace } from "./PlaceAutocomplete";
+import type { LatLng } from "@/lib/api/schema";
 
 const schema = z.object({
   name: z.string().min(2, "Give the trip a short name"),
   destinationAddress: z.string().min(3, "Where are we going?"),
-  departAt: z
+  arriveBy: z
     .string()
-    .min(1, "Pick a departure time")
+    .min(1, "Pick a time")
     .refine((value) => !Number.isNaN(new Date(value).getTime()), "Invalid datetime"),
   arrivalWindowMinutes: z
     .number()
@@ -32,25 +34,29 @@ type FormOutput = z.output<typeof schema>;
 export function CreateTripForm(): React.JSX.Element {
   const router = useRouter();
   const create = useCreateTrip();
+  // When the user picks a suggestion from Google Places we get an exact
+  // lat/lng — passing it through saves the backend a geocoding hop and
+  // means there's no ambiguity about which "Palm Beach" they meant.
+  const [destinationLocation, setDestinationLocation] = useState<LatLng | null>(null);
+
   const form = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: "",
       destinationAddress: "",
-      departAt: defaultDepartAt(),
+      arriveBy: defaultArriveBy(),
       arrivalWindowMinutes: 15,
     },
   });
 
-  const destinationAddress = useWatch({ control: form.control, name: "destinationAddress" });
-
-  async function onSubmit(values: FormOutput) {
+  async function onSubmit(values: FormOutput): Promise<void> {
     try {
       const trip = await create.mutateAsync({
         name: values.name,
         destinationAddress: values.destinationAddress,
-        departAt: new Date(values.departAt).toISOString(),
+        arriveBy: new Date(values.arriveBy).toISOString(),
         arrivalWindowMinutes: values.arrivalWindowMinutes,
+        ...(destinationLocation ? { destination: destinationLocation } : {}),
       });
       toast.success("Trip created");
       router.push(`/trips/${trip.id}`);
@@ -74,23 +80,45 @@ export function CreateTripForm(): React.JSX.Element {
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="destinationAddress">Destination address</Label>
-              <Input
-                id="destinationAddress"
-                placeholder="Palm Beach NSW 2108"
-                {...form.register("destinationAddress")}
+              <Label htmlFor="destinationAddress">Where are you going?</Label>
+              <Controller
+                control={form.control}
+                name="destinationAddress"
+                render={({ field }) => (
+                  <PlaceAutocomplete
+                    id="destinationAddress"
+                    placeholder="Search for an address or place"
+                    value={field.value}
+                    onChange={(next) => {
+                      field.onChange(next);
+                      // Clear the resolved location when the user edits the
+                      // text — it's no longer guaranteed to match.
+                      setDestinationLocation(null);
+                    }}
+                    onPlace={(place: SelectedPlace) => {
+                      field.onChange(place.address);
+                      setDestinationLocation(place.location);
+                    }}
+                  />
+                )}
               />
               {form.formState.errors.destinationAddress ? (
                 <p className="text-destructive text-xs">
                   {form.formState.errors.destinationAddress.message}
                 </p>
               ) : null}
+              {destinationLocation ? (
+                <p className="text-muted-foreground text-[11px]">
+                  Pinned at {destinationLocation.lat.toFixed(4)},{" "}
+                  {destinationLocation.lng.toFixed(4)}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="departAt">Depart at</Label>
-              <Input id="departAt" type="datetime-local" {...form.register("departAt")} />
-              {form.formState.errors.departAt ? (
-                <p className="text-destructive text-xs">{form.formState.errors.departAt.message}</p>
+              <Label htmlFor="arriveBy">Arrive by</Label>
+              <Input id="arriveBy" type="datetime-local" {...form.register("arriveBy")} />
+              {form.formState.errors.arriveBy ? (
+                <p className="text-destructive text-xs">{form.formState.errors.arriveBy.message}</p>
               ) : null}
             </div>
             <div className="space-y-1.5">
@@ -103,11 +131,10 @@ export function CreateTripForm(): React.JSX.Element {
                 {...form.register("arrivalWindowMinutes")}
               />
               <p className="text-muted-foreground text-xs">
-                +/- minutes of slack the optimiser can use around your target.
+                +/- minutes of flexibility around your target arrival time.
               </p>
             </div>
           </div>
-          <GeocodePreview address={destinationAddress} />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => router.push("/trips")}>
               Cancel
@@ -122,11 +149,11 @@ export function CreateTripForm(): React.JSX.Element {
   );
 }
 
-function defaultDepartAt(): string {
+function defaultArriveBy(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
+  d.setHours(10, 0, 0, 0);
   // datetime-local wants YYYY-MM-DDTHH:mm (local time, no TZ suffix)
-  const pad = (n: number) => String(n).padStart(2, "0");
+  const pad = (n: number): string => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

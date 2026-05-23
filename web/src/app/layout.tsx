@@ -16,7 +16,7 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "SydneyTrips",
-  description: "Multi-driver ride optimisation for Sydney trips",
+  description: "Plan group trips around Sydney — pickups, routes, and rides.",
 };
 
 export default function RootLayout({

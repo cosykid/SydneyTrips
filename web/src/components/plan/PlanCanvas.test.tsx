@@ -3,10 +3,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PlanCanvas } from "./PlanCanvas";
-import type {
-  ParetoResponse,
-  RunSolutionResponse,
-} from "@/lib/api/schema";
 import type { components } from "@/lib/api/types";
 
 type TripDetailDto = components["schemas"]["TripDetailDto"];
@@ -16,7 +12,7 @@ vi.mock("sonner", () => ({
   Toaster: () => null,
 }));
 
-// Stub the PlanMap so jsdom doesn't try to instantiate Mapbox GL.
+// Stub the PlanMap so jsdom doesn't try to instantiate Google Maps.
 vi.mock("./PlanMap", () => ({
   PlanMap: () => <div data-testid="map-stub" />,
 }));
@@ -37,7 +33,6 @@ const trip: TripDetailDto = {
     {
       id: "p-1",
       tripId: "trip-1",
-      userId: "u-1",
       displayName: "Alex",
       homeLongitude: 151.2,
       homeLatitude: -33.86,
@@ -48,7 +43,7 @@ const trip: TripDetailDto = {
         {
           id: "n-1",
           participantId: "p-1",
-          kind: 2,
+          kind: "busStop",
           longitude: 151.21,
           latitude: -33.87,
           walkMins: 5,
@@ -61,44 +56,42 @@ const trip: TripDetailDto = {
   ],
 };
 
-const runResponse: RunSolutionResponse = {
-  id: "run-1",
-  tripId: "trip-1",
-  status: "completed",
-  createdAt: new Date().toISOString(),
+// Wire shape from the API: { run: OptimisationRunDto, solution?: SolutionDto }
+const runResponse = {
+  run: {
+    id: "run-1",
+    tripId: "trip-1",
+    status: "completed" as const,
+    solver: "orTools" as const,
+    weights: { driveTime: 0.4, stopCount: 0.2, walkAndPt: 0.2, arrivalSpread: 0, fairness: 0.2 },
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    failureReason: null,
+    bestSolutionId: "sol-1",
+    stats: null,
+  },
+  solution: null,
 };
 
-const paretoResponse: ParetoResponse = {
-  runId: "run-1",
-  solutions: [
-    {
-      id: "sol-1",
-      label: "fastest",
-      metrics: {
-        totalDrivingMinutes: 42,
-        maxDrivingMinutes: 32,
-        totalStops: 3,
-        totalWalkMetres: 450,
-        maxWalkMetres: 220,
-        fairnessIndex: 0.84,
+// Wire shape from the API: SolutionDto[]
+const paretoResponse = [
+  {
+    id: "sol-1",
+    optimisationRunId: "run-1",
+    label: "fastest",
+    objective: 42,
+    objectiveTerms: [],
+    routes: [
+      {
+        id: "dr-1",
+        driverId: "p-1",
+        travelMins: 42,
+        orderIndex: 0,
+        stops: [],
       },
-      routes: [
-        {
-          driverParticipantId: "p-1",
-          driverDisplayName: "Alex",
-          colour: "#0072B2",
-          polyline: [
-            { lat: -33.86, lng: 151.2 },
-            { lat: -33.7, lng: 151.27 },
-          ],
-          stops: [],
-          drivingMinutes: 42,
-          drivingDistanceKm: 35,
-        },
-      ],
-    },
-  ],
-};
+    ],
+  },
+];
 
 const mockApiCalls = vi.hoisted(() => ({
   fetchMock: vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(),
@@ -147,23 +140,22 @@ function renderCanvas(): void {
 describe("PlanCanvas", () => {
   it("renders the planner header once trip data loads", async () => {
     renderCanvas();
-    expect(await screen.findByText("Planner")).toBeInTheDocument();
     expect(await screen.findByText(/Test trip/)).toBeInTheDocument();
     expect(screen.getByTestId("map-stub")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Optimise$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Plan trip$/i })).toBeInTheDocument();
   });
 
   it("transitions to the Pareto carousel after optimisation completes", async () => {
     const user = userEvent.setup();
     renderCanvas();
 
-    const optimise = await screen.findByRole("button", { name: /^Optimise$/i });
+    const optimise = await screen.findByRole("button", { name: /^Plan trip$/i });
     await user.click(optimise);
 
     await waitFor(() =>
       expect(screen.getByTestId("pareto-carousel")).toBeInTheDocument(),
     );
     expect(screen.getByText(/42 min/)).toBeInTheDocument(); // total driving
-    expect(screen.getByRole("button", { name: /Re-run optimisation/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Re-plan$/i })).toBeInTheDocument();
   });
 });

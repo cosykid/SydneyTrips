@@ -4,11 +4,12 @@ namespace Trips.Core.Domain;
 
 /// <summary>
 /// A person taking part in a <see cref="Trip"/>. Either a driver (with car/seats) or a passenger.
+/// There is no link back to an account — the auth model is anonymous-session-cookie, so a
+/// participant is just a label on the trip plus their home location and preferences.
 /// </summary>
 public sealed class Participant
 {
     public Guid Id { get; private set; }
-    public Guid UserId { get; private set; }
     public Guid TripId { get; private set; }
     public string DisplayName { get; private set; }
     public Point Home { get; private set; }
@@ -31,7 +32,6 @@ public sealed class Participant
 
     public Participant(
         Guid id,
-        Guid userId,
         Guid tripId,
         string displayName,
         Point home,
@@ -53,7 +53,6 @@ public sealed class Participant
         }
 
         Id = id;
-        UserId = userId;
         TripId = tripId;
         DisplayName = displayName;
         Home = home;

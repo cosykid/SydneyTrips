@@ -17,6 +17,16 @@ public sealed class CreateTripRequestValidator : AbstractValidator<CreateTripReq
     }
 }
 
+public sealed class UpdateTripDestinationRequestValidator : AbstractValidator<UpdateTripDestinationRequest>
+{
+    public UpdateTripDestinationRequestValidator()
+    {
+        RuleFor(x => x.DestinationName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DestinationLongitude).InclusiveBetween(-180, 180);
+        RuleFor(x => x.DestinationLatitude).InclusiveBetween(-90, 90);
+    }
+}
+
 public sealed class AddParticipantRequestValidator : AbstractValidator<AddParticipantRequest>
 {
     public AddParticipantRequestValidator()
@@ -96,29 +106,3 @@ public sealed class WhatIfRequestValidator : AbstractValidator<WhatIfRequest>
     }
 }
 
-public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest>
-{
-    public RegisterRequestValidator()
-    {
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.Password).NotEmpty().MinimumLength(8).MaximumLength(128);
-        RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(120);
-    }
-}
-
-public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
-{
-    public LoginRequestValidator()
-    {
-        RuleFor(x => x.Email).NotEmpty().EmailAddress();
-        RuleFor(x => x.Password).NotEmpty();
-    }
-}
-
-public sealed class RefreshRequestValidator : AbstractValidator<RefreshRequest>
-{
-    public RefreshRequestValidator()
-    {
-        RuleFor(x => x.RefreshToken).NotEmpty();
-    }
-}

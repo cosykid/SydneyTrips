@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAddParticipant, useRemoveParticipant } from "@/lib/api/hooks";
-import type { Participant, ParticipantRole } from "@/lib/api/schema";
+import type { LatLng, Participant, ParticipantRole } from "@/lib/api/schema";
+import { PlaceAutocomplete, type SelectedPlace } from "./PlaceAutocomplete";
 
 interface ParticipantListProps {
   tripId: string;
@@ -26,6 +27,9 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
     role: "passenger" as ParticipantRole,
     seatsAvailable: 4,
   });
+  // Captured when the user picks a suggestion from the Places dropdown —
+  // gives us exact coordinates, skipping the backend's geocode hop.
+  const [originLocation, setOriginLocation] = useState<LatLng | null>(null);
 
   async function onAdd(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -38,10 +42,12 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
           originAddress: form.originAddress.trim(),
           role: form.role,
           seatsAvailable: form.role === "driver" ? form.seatsAvailable : undefined,
+          ...(originLocation ? { origin: originLocation } : {}),
         },
       });
       toast.success(`Added ${form.displayName}`);
       setForm({ displayName: "", originAddress: "", role: "passenger", seatsAvailable: 4 });
+      setOriginLocation(null);
     } catch (err) {
       toast.error("Could not add participant", {
         description: err instanceof Error ? err.message : undefined,
@@ -76,13 +82,19 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="p-origin">Origin address</Label>
-            <Input
+            <Label htmlFor="p-origin">Where they&apos;re starting from</Label>
+            <PlaceAutocomplete
               id="p-origin"
-              value={form.originAddress}
-              onChange={(e) => setForm((f) => ({ ...f, originAddress: e.target.value }))}
               placeholder="123 Glebe Point Rd, Glebe"
-              required
+              value={form.originAddress}
+              onChange={(next) => {
+                setForm((f) => ({ ...f, originAddress: next }));
+                setOriginLocation(null);
+              }}
+              onPlace={(place: SelectedPlace) => {
+                setForm((f) => ({ ...f, originAddress: place.address }));
+                setOriginLocation(place.location);
+              }}
             />
           </div>
           <div className="space-y-1">

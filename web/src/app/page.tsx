@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "@/lib/auth/server";
 
-export default async function Home(): Promise<never> {
-  const session = await getServerSession();
-  redirect(session ? "/trips" : "/login");
+export default function Home(): never {
+  // No login flow — the anonymous-session cookie is stamped on first API call.
+  // Send people straight to their trip list.
+  redirect("/trips");
 }

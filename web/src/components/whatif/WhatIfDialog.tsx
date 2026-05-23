@@ -1,10 +1,5 @@
 "use client";
 
-// What-if mode dialog. Lets the user drop participants, add new ones (by
-// address — the API will geocode + generate candidate nodes), and override
-// the objective weights, then triggers `/trips/{id}/whatif` and shows a
-// side-by-side diff against the original.
-
 import { useCallback, useMemo, useState } from "react";
 import { Loader2, MinusCircle, PlusCircle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { WeightSliders } from "@/components/plan/WeightSliders";
-import { useLockSolution, useRun, useWhatIf } from "@/lib/api/hooks";
+import { useLockSolution, useRun, useTrip, useWhatIf } from "@/lib/api/hooks";
 import type { ObjectiveWeights, Participant, Solution } from "@/lib/api/schema";
 import { DEFAULT_WEIGHTS } from "@/lib/api/schema";
 import {
@@ -43,14 +38,7 @@ export interface WhatIfDialogProps {
   originalSolution: Solution;
 }
 
-/**
- * Outer wrapper — uses `key` to fully unmount/remount the inner dialog when
- * it closes so we never have to setState-in-effect to reset draft fields.
- */
 export function WhatIfDialog(props: WhatIfDialogProps): React.JSX.Element {
-  // Bumping `key` whenever the dialog transitions from open→closed forces a
-  // fresh instance of `WhatIfDialogBody`, which is the cheapest, lint-clean
-  // way to reset all the draft state.
   const [resetKey, setResetKey] = useState(0);
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -69,7 +57,9 @@ function WhatIfDialogBody({
   participants,
   originalSolution,
 }: WhatIfDialogProps): React.JSX.Element {
-  const [draft, setDraft] = useState<WhatIfDraft>(() => emptyDraft());
+  // `repair: true` (warm-start) is the default; we no longer expose the
+  // checkbox — keeping existing riders' routes is always the better UX.
+  const [draft, setDraft] = useState<WhatIfDraft>(() => ({ ...emptyDraft(), repair: true }));
   const [weights, setWeights] = useState<ObjectiveWeights>({ ...DEFAULT_WEIGHTS });
   const [overrideWeights, setOverrideWeights] = useState(false);
   const [addEntry, setAddEntry] = useState({
@@ -82,7 +72,8 @@ function WhatIfDialogBody({
 
   const whatIfMut = useWhatIf();
   const lockMut = useLockSolution();
-  const run = useRun({ tripId, runId: activeRunId });
+  const tripQuery = useTrip(tripId);
+  const run = useRun({ tripId, runId: activeRunId, trip: tripQuery.data ?? undefined });
 
   const newSolution: Solution | undefined = run.data?.solution;
   const stopDiff = useMemo(
@@ -132,7 +123,7 @@ function WhatIfDialogBody({
       newWeights: overrideWeights ? weights : undefined,
     };
     if (isDraftEmpty(draftWithWeights)) {
-      toast.error("Add at least one change before re-optimising");
+      toast.error("Add at least one change before recalculating");
       return;
     }
     try {
@@ -140,9 +131,9 @@ function WhatIfDialogBody({
       const { runId } = await whatIfMut.mutateAsync({ tripId, body });
       setActiveRunId(runId);
       setShowCompare(true);
-      toast.info("Re-optimising trip…");
+      toast.info("Recalculating routes…");
     } catch (err) {
-      toast.error("Could not start what-if", {
+      toast.error("Could not start recalculation", {
         description: err instanceof Error ? err.message : undefined,
       });
     }
@@ -152,10 +143,10 @@ function WhatIfDialogBody({
     if (!newSolution) return;
     try {
       await lockMut.mutateAsync({ tripId, body: { solutionId: newSolution.id } });
-      toast.success("What-if accepted — solution locked");
+      toast.success("New plan saved");
       onOpenChange(false);
     } catch (err) {
-      toast.error("Could not lock what-if solution", {
+      toast.error("Could not save the new plan", {
         description: err instanceof Error ? err.message : undefined,
       });
     }
@@ -181,10 +172,10 @@ function WhatIfDialogBody({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!max-w-2xl">
         <DialogHeader>
-          <DialogTitle>What if…</DialogTitle>
+          <DialogTitle>Try changes</DialogTitle>
           <DialogDescription>
-            Tweak who&apos;s on the trip and re-solve while keeping the rest of the schedule
-            intact.
+            Swap who&apos;s on the trip and see how routes change — your existing riders keep their
+            stops where possible.
           </DialogDescription>
         </DialogHeader>
 
@@ -200,11 +191,11 @@ function WhatIfDialogBody({
           />
         ) : showCompare && computing ? (
           <div className="text-muted-foreground flex flex-col items-center gap-2 py-10 text-sm">
-            <Loader2 className="h-5 w-5 animate-spin" /> Re-optimising…
+            <Loader2 className="text-primary h-5 w-5 animate-spin" /> Recalculating…
           </div>
         ) : showCompare && run.data?.status === "failed" ? (
           <div className="text-destructive py-6 text-sm" role="alert">
-            What-if failed: {run.data.error ?? "unknown error"}
+            Recalculation failed: {run.data.error ?? "unknown error"}
             <Button
               type="button"
               variant="outline"
@@ -218,7 +209,7 @@ function WhatIfDialogBody({
         ) : (
           <div className="max-h-[60vh] space-y-5 overflow-y-auto pr-1">
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold">Drop participants</h3>
+              <h3 className="text-sm font-semibold">Remove people</h3>
               <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                 {participants.map((p) => {
                   const isDropped = draft.dropParticipantIds.has(p.id);
@@ -252,7 +243,7 @@ function WhatIfDialogBody({
             <Separator />
 
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold">Add participants</h3>
+              <h3 className="text-sm font-semibold">Add people</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.5fr_auto]">
                 <div className="space-y-1">
                   <Label htmlFor="add-name">Name</Label>
@@ -265,7 +256,7 @@ function WhatIfDialogBody({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="add-address">Address</Label>
+                  <Label htmlFor="add-address">Where they&apos;re starting from</Label>
                   <Input
                     id="add-address"
                     value={addEntry.originAddress}
@@ -316,45 +307,31 @@ function WhatIfDialogBody({
             <Separator />
 
             <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Override weights</h3>
-                <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
-                    checked={overrideWeights}
-                    onChange={(e) => setOverrideWeights(e.target.checked)}
-                  />
-                  Use new weights
-                </label>
-              </div>
-              {overrideWeights ? (
-                <WeightSliders
-                  weights={weights}
-                  onChange={(key, value) =>
-                    setWeights((w) => ({ ...w, [key]: value }))
-                  }
-                  onReset={() => setWeights({ ...DEFAULT_WEIGHTS })}
-                />
-              ) : (
-                <p className="text-muted-foreground text-xs">
-                  Tick to override the objective weights for this what-if run.
-                </p>
-              )}
-            </section>
-
-            <Separator />
-
-            <section className="space-y-2">
-              <label className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                <input
-                  type="checkbox"
-                  className="accent-primary"
-                  checked={draft.repair}
-                  onChange={(e) => setDraft((d) => ({ ...d, repair: e.target.checked }))}
-                />
-                Warm-start from locked solution (minimise churn for unaffected riders)
-              </label>
+              <details className="group/override">
+                <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 text-xs select-none">
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      className="accent-primary"
+                      checked={overrideWeights}
+                      onChange={(e) => setOverrideWeights(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    Use different route priorities
+                  </label>
+                </summary>
+                {overrideWeights ? (
+                  <div className="mt-3">
+                    <WeightSliders
+                      weights={weights}
+                      onChange={(key, value) =>
+                        setWeights((w) => ({ ...w, [key]: value }))
+                      }
+                      onReset={() => setWeights({ ...DEFAULT_WEIGHTS })}
+                    />
+                  </div>
+                ) : null}
+              </details>
             </section>
           </div>
         )}
@@ -374,7 +351,7 @@ function WhatIfDialogBody({
                 ) : (
                   <Sparkles className="mr-1 h-3.5 w-3.5" />
                 )}
-                Re-optimise
+                Recalculate
               </Button>
             </>
           ) : null}
@@ -409,9 +386,9 @@ function CompareView({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3 text-center text-xs" data-testid="diff-counts">
-        <Card label="Kept" value={kept} variant="muted" />
-        <Card label="Added" value={added} variant="add" />
-        <Card label="Removed" value={removed} variant="remove" />
+        <DiffCard label="Kept" value={kept} variant="muted" />
+        <DiffCard label="Added" value={added} variant="add" />
+        <DiffCard label="Removed" value={removed} variant="remove" />
       </div>
       {metricsDiff ? (
         <div className="grid grid-cols-2 gap-3 rounded-md border p-3 text-xs sm:grid-cols-4">
@@ -450,7 +427,7 @@ function CompareView({
             key={`${entry.state}-${entry.key}`}
             className={
               entry.state === "added"
-                ? "text-emerald-600 dark:text-emerald-400"
+                ? "text-success"
                 : entry.state === "removed"
                   ? "text-destructive line-through"
                   : "text-muted-foreground"
@@ -467,14 +444,14 @@ function CompareView({
           Discard
         </Button>
         <Button type="button" onClick={onAccept} disabled={isLocking} data-testid="accept-whatif">
-          {isLocking ? "Locking…" : "Accept what-if"}
+          {isLocking ? "Saving…" : "Keep new plan"}
         </Button>
       </DialogFooter>
     </div>
   );
 }
 
-function Card({
+function DiffCard({
   label,
   value,
   variant,
@@ -485,7 +462,7 @@ function Card({
 }): React.JSX.Element {
   const colours: Record<typeof variant, string> = {
     muted: "bg-muted text-muted-foreground",
-    add: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+    add: "bg-success/15 text-success",
     remove: "bg-destructive/10 text-destructive",
   };
   return (
@@ -521,7 +498,7 @@ function Metric({
         {unit}
       </dd>
       <dd
-        className={`text-[10px] font-medium ${goodDirection ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}
+        className={`text-[10px] font-medium ${goodDirection ? "text-success" : "text-amber-600 dark:text-amber-400"}`}
       >
         {delta > 0 ? "+" : ""}
         {delta.toFixed(unit === "" ? 2 : 1)}

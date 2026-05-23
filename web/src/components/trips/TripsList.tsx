@@ -7,6 +7,23 @@ import { useTrips } from "@/lib/api/hooks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import type { TripStatus } from "@/lib/api/schema";
+
+function statusLabel(status: TripStatus, hasLockedSolution: boolean): string {
+  if (hasLockedSolution) return "Ready to go";
+  switch (status) {
+    case "draft":
+      return "Not planned yet";
+    case "planned":
+      return "Ready to plan";
+    case "in_progress":
+      return "On the way";
+    case "completed":
+      return "Done";
+    default:
+      return status;
+  }
+}
 
 export function TripsList(): React.JSX.Element {
   const trips = useTrips();
@@ -40,7 +57,7 @@ export function TripsList(): React.JSX.Element {
           <div>
             <p className="font-medium">No trips yet</p>
             <p className="text-muted-foreground text-sm">
-              Spin up your first plan — we&apos;ll handle the routing.
+              Create your first trip — pick a destination and we&apos;ll figure out the pickups.
             </p>
           </div>
           <Button render={<Link href="/trips/new" />} nativeButton={false}>
@@ -54,26 +71,26 @@ export function TripsList(): React.JSX.Element {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {list.map((trip) => (
-        <Card key={trip.id} className="hover:border-foreground/20 transition-colors">
+        <Card key={trip.id} className="hover:ring-primary/20 transition-all hover:shadow-lg/30">
           <CardHeader className="flex flex-row items-start justify-between gap-2">
             <div>
               <CardTitle className="text-base">{trip.name}</CardTitle>
               <p className="text-muted-foreground text-xs">{trip.destinationAddress}</p>
             </div>
             <Badge variant={trip.hasLockedSolution ? "default" : "secondary"}>
-              {trip.hasLockedSolution ? "locked" : trip.status}
+              {statusLabel(trip.status, trip.hasLockedSolution)}
             </Badge>
           </CardHeader>
           <CardContent className="space-y-3">
             <dl className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div>
-                <dt className="uppercase tracking-wider">Depart</dt>
+                <dt className="text-[10px] uppercase tracking-wider">Arrive by</dt>
                 <dd className="text-foreground">
-                  {format(new Date(trip.departAt), "EEE d MMM, HH:mm")}
+                  {format(new Date(trip.arriveBy), "EEE d MMM, HH:mm")}
                 </dd>
               </div>
               <div>
-                <dt className="uppercase tracking-wider">Participants</dt>
+                <dt className="text-[10px] uppercase tracking-wider">People</dt>
                 <dd className="text-foreground">{trip.participantCount}</dd>
               </div>
             </dl>

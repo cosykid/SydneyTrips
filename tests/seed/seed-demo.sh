@@ -30,10 +30,16 @@
 set -euo pipefail
 
 BASE_URL=${BASE_URL:-http://localhost:5000}
+# Auth was removed — the script now drives the API with a single anonymous-session
+# cookie (curl -b/-c). DEMO_EMAIL/PASSWORD/NAME are kept in the output JSON for
+# back-compat with downstream consumers (Playwright specs etc.) that still read
+# the fields; they're no longer used to authenticate.
 DEMO_EMAIL=${DEMO_EMAIL:-demo@sydneytrips.dev}
 DEMO_PASSWORD=${DEMO_PASSWORD:-PalmBeach2026!}
 DEMO_NAME=${DEMO_NAME:-"Demo Organiser"}
 SCENARIO=${SCENARIO:-multi}
+COOKIE_JAR=$(mktemp -t seed-demo-cookies)
+trap 'rm -f "$COOKIE_JAR"' EXIT
 DEMO_OUT_DIR=${DEMO_OUT_DIR:-/tmp}
 TRIP_NAME=${TRIP_NAME:-"Group trip to Palm Beach"}
 RESET=0
@@ -104,36 +110,26 @@ note "demo user: $DEMO_EMAIL"
 
 # --- helpers ---------------------------------------------------------------
 
-api_post()   { curl -sf -X POST "$BASE_URL$1" -H 'Content-Type: application/json' "${@:2}"; }
-api_get()    { curl -sf       "$BASE_URL$1" "${@:2}"; }
-api_delete() { curl -sf -X DELETE "$BASE_URL$1" "${@:2}"; }
+api_post()   { curl -sf -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST "$BASE_URL$1" -H 'Content-Type: application/json' "${@:2}"; }
+api_get()    { curl -sf -b "$COOKIE_JAR" -c "$COOKIE_JAR"           "$BASE_URL$1" "${@:2}"; }
+api_delete() { curl -sf -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X DELETE "$BASE_URL$1" "${@:2}"; }
 
-# --- register or login -----------------------------------------------------
+# --- prime the anonymous session cookie ------------------------------------
 
-say "register or log in demo user"
-if reg=$(api_post "/auth/register" \
-      -d "$(jq -nc --arg e "$DEMO_EMAIL" --arg p "$DEMO_PASSWORD" --arg n "$DEMO_NAME" \
-            '{email:$e,password:$p,displayName:$n}')" 2>/dev/null); then
-  note "registered fresh user"
-  TOKEN=$(echo "$reg" | jq -r .accessToken)
-else
-  note "user exists, logging in instead"
-  TOKEN=$(api_post "/auth/login" \
-        -d "$(jq -nc --arg e "$DEMO_EMAIL" --arg p "$DEMO_PASSWORD" '{email:$e,password:$p}')" \
-        | jq -r .accessToken)
-fi
-[[ -n "$TOKEN" && "$TOKEN" != "null" ]] || { echo "no access token; aborting" >&2; exit 1; }
-AUTH=(-H "Authorization: Bearer $TOKEN")
-note "got JWT (${#TOKEN} chars)"
+say "prime anonymous session cookie"
+api_get "/healthz" >/dev/null
+# AUTH array used to carry the Bearer header; auth is gone, so we leave it
+# empty for any remaining "${AUTH[@]}" expansions further down.
+AUTH=()
 
 # --- reset existing trip with the same name (idempotency) ------------------
 
 say "look for existing demo trip"
-existing=$(api_get "/trips" "${AUTH[@]}" | jq --arg n "$TRIP_NAME" '[.[] | select(.name == $n)] | .[0].id // empty' -r)
+existing=$(api_get "/trips" | jq --arg n "$TRIP_NAME" '[.[] | select(.name == $n)] | .[0].id // empty' -r)
 if [[ -n "$existing" ]]; then
   if [[ "$RESET" -eq 1 ]] || true; then
     note "existing trip $existing — deleting for a clean seed"
-    api_delete "/trips/$existing" "${AUTH[@]}" >/dev/null || true
+    api_delete "/trips/$existing" >/dev/null || true
   fi
 fi
 
@@ -144,7 +140,7 @@ WINDOW_EARLY=$(date -u -v+1d -v9H -v45M -v0S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null |
 WINDOW_LATE=$(date -u -v+1d -v10H -v15M -v0S '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 day 10:15' '+%Y-%m-%dT%H:%M:%SZ')
 
 say "create trip '$TRIP_NAME'"
-TRIP_JSON=$(api_post "/trips" "${AUTH[@]}" \
+TRIP_JSON=$(api_post "/trips" \
   -d "$(jq -nc \
       --arg name "$TRIP_NAME" --arg dest "$DEST_NAME" \
       --argjson dlng "$DEST_LNG" --argjson dlat "$DEST_LAT" \
@@ -160,7 +156,7 @@ declare -a PASSENGER_IDS=()
 
 add_participant() {
   local name="$1" lng="$2" lat="$3" has_car="$4" seats="$5"
-  api_post "/trips/$TRIP_ID/participants" "${AUTH[@]}" \
+  api_post "/trips/$TRIP_ID/participants" \
     -d "$(jq -nc \
         --arg n "$name" --argjson lng "$lng" --argjson lat "$lat" \
         --argjson hc "$has_car" --argjson s "$seats" \
@@ -188,13 +184,13 @@ done
 
 say "optimise"
 OPT_PAYLOAD='{"weights":{"driveTime":1,"stopCount":0.5,"walkAndPt":0.5,"arrivalSpread":0.3,"fairness":0.3},"solver":1}'
-RUN_ID=$(api_post "/trips/$TRIP_ID/optimise" "${AUTH[@]}" -d "$OPT_PAYLOAD" | jq -r .runId)
+RUN_ID=$(api_post "/trips/$TRIP_ID/optimise" -d "$OPT_PAYLOAD" | jq -r .runId)
 note "run: $RUN_ID"
 
 say "poll until complete"
 STATUS="unknown"
 for _ in $(seq 1 60); do
-  STATUS=$(api_get "/trips/$TRIP_ID/runs/$RUN_ID" "${AUTH[@]}" | jq -r .run.status)
+  STATUS=$(api_get "/trips/$TRIP_ID/runs/$RUN_ID" | jq -r .run.status)
   note "  status=$STATUS"
   [[ "$STATUS" == "2" || "$STATUS" == "Completed" ]] && break
   [[ "$STATUS" == "3" || "$STATUS" == "Failed" ]] && { echo "run failed" >&2; exit 1; }
@@ -205,7 +201,7 @@ done
 # --- lock a solution -------------------------------------------------------
 
 say "lock solution (pareto index 0 = balanced)"
-LOCKED=$(api_post "/trips/$TRIP_ID/lock-solution" "${AUTH[@]}" \
+LOCKED=$(api_post "/trips/$TRIP_ID/lock-solution" \
   -d "$(jq -nc --arg r "$RUN_ID" '{runId:$r,paretoIndex:0}')" \
   | jq -r .lockedSolutionId)
 note "locked solution: $LOCKED"

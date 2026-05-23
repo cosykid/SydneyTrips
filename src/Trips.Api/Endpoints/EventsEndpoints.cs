@@ -11,8 +11,7 @@ public static class EventsEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
         var group = app.MapGroup("/trips/{tripId:guid}/events")
-            .WithTags("Events")
-            .RequireAuthorization();
+            .WithTags("Events");
 
         group.MapGet("/", ListAsync).WithName("ListTripEvents");
 
@@ -24,10 +23,9 @@ public static class EventsEndpoints
         DateTimeOffset? since,
         TripAuthorizationService authz,
         ITripEventRepository events,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();

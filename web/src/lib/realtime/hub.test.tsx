@@ -139,11 +139,12 @@ describe("useTripHub", () => {
     await waitFor(() => expect(result.current.status).toBe("connected"));
 
     await act(async () => {
-      await result.current.publishDriverPosition(-33.9, 151.18);
+      await result.current.publishDriverPosition("driver-1", -33.9, 151.18);
     });
     expect(mock.invokeSpy).toHaveBeenCalledWith(
       "PublishDriverPositionAsync",
       "trip-1",
+      "driver-1",
       -33.9,
       151.18,
     );

@@ -16,8 +16,7 @@ public static class ParticipantEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
         var group = app.MapGroup("/trips/{tripId:guid}/participants")
-            .WithTags("Participants")
-            .RequireAuthorization();
+            .WithTags("Participants");
 
         group.MapPost("/", AddAsync)
             .AddEndpointFilter<ValidationFilter<AddParticipantRequest>>()
@@ -40,12 +39,12 @@ public static class ParticipantEndpoints
         ITripEventRepository events,
         ParticipantCandidateNodeService candidateNodes,
         IGeocodingClient geocoding,
-        CurrentUser currentUser,
+        CurrentSession session,
         IClock clock,
         HttpContext http,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -97,7 +96,6 @@ public static class ParticipantEndpoints
 
         var participant = new Participant(
             id: Guid.NewGuid(),
-            userId: currentUser.UserIdGuid,
             tripId: tripId,
             displayName: request.DisplayName,
             home: home,
@@ -112,7 +110,7 @@ public static class ParticipantEndpoints
             id: Guid.NewGuid(),
             tripId: tripId,
             kind: EventKind.ParticipantAdded,
-            actorId: currentUser.UserIdGuid,
+            actorId: session.SessionId,
             location: home,
             timestamp: clock.UtcNow), ct).ConfigureAwait(false);
         await participants.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -126,10 +124,9 @@ public static class ParticipantEndpoints
         PreferencesDto prefs,
         TripAuthorizationService authz,
         IParticipantRepository participants,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -152,11 +149,11 @@ public static class ParticipantEndpoints
         TripAuthorizationService authz,
         IParticipantRepository participants,
         ITripEventRepository events,
-        CurrentUser currentUser,
+        CurrentSession session,
         IClock clock,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -173,7 +170,7 @@ public static class ParticipantEndpoints
             id: Guid.NewGuid(),
             tripId: tripId,
             kind: EventKind.ParticipantRemoved,
-            actorId: currentUser.UserIdGuid,
+            actorId: session.SessionId,
             location: participant.Home,
             timestamp: clock.UtcNow), ct).ConfigureAwait(false);
         await participants.SaveChangesAsync(ct).ConfigureAwait(false);

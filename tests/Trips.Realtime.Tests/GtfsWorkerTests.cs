@@ -51,7 +51,6 @@ public sealed class GtfsWorkerTests
             createdAt: DateTimeOffset.UtcNow);
         var participant = new Participant(
             id: participantId,
-            userId: Guid.NewGuid(),
             tripId: tripId,
             displayName: "P",
             home: Factory.CreatePoint(new Coordinate(151.2, -33.86)),

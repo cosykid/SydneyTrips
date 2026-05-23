@@ -35,14 +35,15 @@ public sealed class EventsEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListEvents_returns_404_when_caller_not_a_participant()
+    public async Task ListEvents_is_readable_across_sessions()
     {
+        // Anonymous share-link model: any browser holding the trip id can read events.
         var (ownerClient, _) = await _factory.CreateAuthenticatedClientAsync("evt-a@example.com");
         var trip = await CreateTripAsync(ownerClient);
 
-        var (outsider, _) = await _factory.CreateAuthenticatedClientAsync("evt-b@example.com");
-        var response = await outsider.GetAsync($"/trips/{trip.Id}/events");
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var (otherClient, _) = await _factory.CreateAuthenticatedClientAsync("evt-b@example.com");
+        var response = await otherClient.GetAsync($"/trips/{trip.Id}/events");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]

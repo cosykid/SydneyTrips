@@ -20,54 +20,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["Register"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["Login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["Refresh"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/trips": {
         parameters: {
             query?: never;
@@ -98,6 +50,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/trips/{id}/destination": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["UpdateTripDestination"];
         trace?: never;
     };
     "/trips/{tripId}/participants": {
@@ -324,15 +292,6 @@ export interface components {
             seats: number | string;
             preferences: null | components["schemas"]["PreferencesDto"];
         };
-        AuthTokenResponse: {
-            accessToken: string;
-            refreshToken: string;
-            /** Format: date-time */
-            expiresAt: string;
-            userId: string;
-            email: string;
-            displayName: string;
-        };
         CandidateNodeDto: {
             /** Format: uuid */
             id: string;
@@ -350,7 +309,8 @@ export interface components {
             externalId: null | string;
             displayName: null | string;
         };
-        CandidateNodeKindDto: number;
+        /** @enum {unknown} */
+        CandidateNodeKindDto: "home" | "trainStation" | "busStop" | "wharf" | "lightRailStop";
         CostSplitEntry: {
             /** Format: uuid */
             participantId: string;
@@ -415,16 +375,13 @@ export interface components {
             /** Format: uuid */
             runId: string;
         };
-        EventKind: number;
+        /** @enum {unknown} */
+        EventKind: "tripCreated" | "participantAdded" | "participantRemoved" | "optimisationStarted" | "optimisationCompleted" | "optimisationFailed" | "solutionLocked" | "driverDeparted" | "driverPositionUpdated" | "driverLate" | "passengerAtStop" | "routeRecomputed";
         LockSolutionRequest: {
             /** Format: uuid */
             runId: string;
             /** Format: int32 */
             paretoIndex: number | string;
-        };
-        LoginRequest: {
-            email: string;
-            password: string;
         };
         ObjectiveWeightsDto: {
             /** Format: double */
@@ -469,7 +426,8 @@ export interface components {
             lpRelaxation: null | number | string;
             solver: components["schemas"]["SolverKind"];
         };
-        OptimisationStatus: number;
+        /** @enum {unknown} */
+        OptimisationStatus: "pending" | "running" | "completed" | "failed" | "cancelled";
         OptimiseRequest: {
             weights: components["schemas"]["ObjectiveWeightsDto"];
             solver?: components["schemas"]["SolverKind"];
@@ -479,8 +437,6 @@ export interface components {
             id: string;
             /** Format: uuid */
             tripId: string;
-            /** Format: uuid */
-            userId: string;
             displayName: string;
             /** Format: double */
             homeLongitude: number | string;
@@ -496,8 +452,6 @@ export interface components {
             id: string;
             /** Format: uuid */
             tripId: string;
-            /** Format: uuid */
-            userId: string;
             displayName: string;
             /** Format: double */
             homeLongitude: number | string;
@@ -516,14 +470,6 @@ export interface components {
             detourToleranceMins: number | string;
             /** Format: double */
             fairnessWeight: number | string;
-        };
-        RefreshRequest: {
-            refreshToken: string;
-        };
-        RegisterRequest: {
-            email: string;
-            password: string;
-            displayName: string;
         };
         ReturnLegRequest: {
             requests: components["schemas"]["ReturnRequestDto"][];
@@ -552,8 +498,11 @@ export interface components {
             objectiveTerms: (number | string)[];
             routes: components["schemas"]["DriverRouteDto"][];
         };
-        /** @default 0 */
-        SolverKind: number;
+        /**
+         * @default orTools
+         * @enum {unknown}
+         */
+        SolverKind: "orTools" | "heuristic";
         StopDto: {
             /** Format: uuid */
             id: string;
@@ -640,6 +589,13 @@ export interface components {
             timestamp: string;
             payloadJson: null | string;
         };
+        UpdateTripDestinationRequest: {
+            destinationName: string;
+            /** Format: double */
+            destinationLongitude: number | string;
+            /** Format: double */
+            destinationLatitude: number | string;
+        };
         WhatIfRequest: {
             dropParticipantIds: null | string[];
             addParticipants: null | components["schemas"]["AddParticipantRequest"][];
@@ -669,78 +625,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    Register: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegisterRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthTokenResponse"];
-                };
-            };
-        };
-    };
-    Login: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthTokenResponse"];
-                };
-            };
-        };
-    };
-    Refresh: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RefreshRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthTokenResponse"];
-                };
             };
         };
     };
@@ -834,6 +718,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpdateTripDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTripDestinationRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripDto"];
+                };
             };
             /** @description Not Found */
             404: {

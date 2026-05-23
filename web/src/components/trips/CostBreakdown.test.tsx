@@ -46,7 +46,6 @@ const trip: TripDetailDto = {
     {
       id: "p-1",
       tripId: "trip-1",
-      userId: "u-1",
       displayName: "Alex",
       homeLongitude: 151.2,
       homeLatitude: -33.86,
@@ -58,7 +57,6 @@ const trip: TripDetailDto = {
     {
       id: "p-2",
       tripId: "trip-1",
-      userId: "u-2",
       displayName: "Bri",
       homeLongitude: 151.18,
       homeLatitude: -33.88,
@@ -70,7 +68,6 @@ const trip: TripDetailDto = {
     {
       id: "p-3",
       tripId: "trip-1",
-      userId: "u-3",
       displayName: "Cam",
       homeLongitude: 151.17,
       homeLatitude: -33.87,

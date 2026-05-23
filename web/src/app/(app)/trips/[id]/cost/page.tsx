@@ -26,7 +26,7 @@ export default async function CostPage({ params }: Params): Promise<React.JSX.El
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Cost split</h1>
         <p className="text-muted-foreground text-sm">
-          Fair fuel + tolls split by passenger-distance carried. Real numbers arrive once WS7 lands.
+          Fair fuel + tolls split based on each passenger&apos;s share of the distance.
         </p>
       </header>
       <CostBreakdown tripId={id} />

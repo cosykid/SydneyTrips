@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import MapboxMap, { Layer, Source, type MapRef } from "react-map-gl/mapbox";
-import "mapbox-gl/dist/mapbox-gl.css";
+import {
+  APIProvider,
+  AdvancedMarker,
+  Map,
+} from "@vis.gl/react-google-maps";
 import type {
   CandidateNode,
   LatLng,
@@ -11,6 +14,8 @@ import type {
   TripSummary,
 } from "@/lib/api/schema";
 import { driverColour } from "@/lib/map/palette";
+import { GooglePolyline } from "@/lib/map/google-polyline";
+import { useRoutePolylines } from "@/lib/map/useRoutePolylines";
 import { MapFallback } from "@/components/map/MapFallback";
 import type { MapViewState } from "@/lib/store";
 
@@ -22,218 +27,119 @@ export interface PlanMapProps {
   trip?: Pick<TripSummary, "id" | "name">;
   viewState: MapViewState;
   onMove: (next: MapViewState) => void;
-  mapRef?: React.Ref<MapRef>;
 }
 
-interface PointFeature {
-  type: "Feature";
-  geometry: { type: "Point"; coordinates: [number, number] };
-  properties: Record<string, string | number | boolean>;
+const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
+
+export function PlanMap(props: PlanMapProps): React.JSX.Element {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+  if (!apiKey) {
+    return (
+      <MapFallback
+        destination={props.destination}
+        participants={props.participants}
+        candidateNodes={props.candidateNodes}
+        solution={props.solution}
+      />
+    );
+  }
+  return (
+    <APIProvider apiKey={apiKey} libraries={["routes"]}>
+      <PlanMapInner {...props} />
+    </APIProvider>
+  );
 }
 
-interface LineFeature {
-  type: "Feature";
-  geometry: { type: "LineString"; coordinates: Array<[number, number]> };
-  properties: Record<string, string | number | boolean>;
-}
-
-interface FeatureCollection<F> {
-  type: "FeatureCollection";
-  features: F[];
-}
-
-function point(loc: LatLng, props: Record<string, string | number | boolean>): PointFeature {
-  return {
-    type: "Feature",
-    geometry: { type: "Point", coordinates: [loc.lng, loc.lat] },
-    properties: props,
-  };
-}
-
-export function PlanMap({
+function PlanMapInner({
   destination,
   participants,
   candidateNodes,
   solution,
   viewState,
   onMove,
-  mapRef,
 }: PlanMapProps): React.JSX.Element {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const driverOrigins = useMemo<Record<string, LatLng>>(() => {
+    const out: Record<string, LatLng> = {};
+    for (const p of participants) {
+      if (p.role === "driver") out[p.id] = p.origin;
+    }
+    return out;
+  }, [participants]);
 
-  const origins = useMemo<FeatureCollection<PointFeature>>(
-    () => ({
-      type: "FeatureCollection",
-      features: participants.map((p) =>
-        point(p.origin, {
-          id: p.id,
-          name: p.displayName,
-          role: p.role,
-          radius: p.role === "driver" ? 8 : 5,
-        }),
-      ),
-    }),
-    [participants],
+  const snappedPolylines = useRoutePolylines(
+    solution?.routes ?? [],
+    destination.point,
+    driverOrigins,
   );
-
-  const candidates = useMemo<FeatureCollection<PointFeature>>(
-    () => ({
-      type: "FeatureCollection",
-      features: candidateNodes.map((c) =>
-        point(c.location, { id: c.id, label: c.label ?? "", modality: c.modality ?? "generic" }),
-      ),
-    }),
-    [candidateNodes],
-  );
-
-  const chosenNodes = useMemo<FeatureCollection<PointFeature>>(() => {
-    if (!solution) return { type: "FeatureCollection", features: [] };
-    return {
-      type: "FeatureCollection",
-      features: solution.routes.flatMap((route) =>
-        route.stops
-          .filter((s) => s.candidateNodeId)
-          .map((s) =>
-            point(s.location, {
-              driverId: route.driverParticipantId,
-              colour: route.colour,
-              passengers: s.passengerIds.length,
-            }),
-          ),
-      ),
-    };
-  }, [solution]);
-
-  const routes = useMemo<FeatureCollection<LineFeature>>(() => {
-    if (!solution) return { type: "FeatureCollection", features: [] };
-    return {
-      type: "FeatureCollection",
-      features: solution.routes.map((route, idx) => ({
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: route.polyline.map((p) => [p.lng, p.lat] as [number, number]),
-        },
-        properties: {
-          driverId: route.driverParticipantId,
-          driverName: route.driverDisplayName,
-          colour: route.colour ?? driverColour(idx),
-        },
-      })),
-    };
-  }, [solution]);
-
-  const destinationFc = useMemo<FeatureCollection<PointFeature>>(
-    () => ({
-      type: "FeatureCollection",
-      features: [point(destination.point, { label: destination.address })],
-    }),
-    [destination.address, destination.point],
-  );
-
-  if (!token) {
-    return (
-      <MapFallback
-        destination={destination}
-        participants={participants}
-        candidateNodes={candidateNodes}
-        solution={solution}
-      />
-    );
-  }
 
   return (
-    <MapboxMap
-      ref={mapRef}
-      mapboxAccessToken={token}
-      mapStyle="mapbox://styles/mapbox/light-v11"
-      latitude={viewState.latitude}
-      longitude={viewState.longitude}
+    <Map
+      mapId={MAP_ID}
+      center={{ lat: viewState.latitude, lng: viewState.longitude }}
       zoom={viewState.zoom}
-      onMove={(evt) =>
-        onMove({
-          latitude: evt.viewState.latitude,
-          longitude: evt.viewState.longitude,
-          zoom: evt.viewState.zoom,
-        })
-      }
+      gestureHandling="greedy"
+      disableDefaultUI={false}
+      clickableIcons={false}
+      onCameraChanged={(ev) => {
+        const { center, zoom } = ev.detail;
+        onMove({ latitude: center.lat, longitude: center.lng, zoom });
+      }}
       style={{ width: "100%", height: "100%" }}
     >
-      {/* Candidate PT nodes — small grey */}
-      <Source id="candidate-nodes" type="geojson" data={candidates}>
-        <Layer
-          id="candidate-nodes-layer"
-          type="circle"
-          paint={{
-            "circle-radius": 3,
-            "circle-color": "#9CA3AF",
-            "circle-opacity": 0.7,
-            "circle-stroke-width": 0.5,
-            "circle-stroke-color": "#4B5563",
-          }}
-        />
-      </Source>
+      {/* Candidate pickup nodes — small grey dots */}
+      {candidateNodes.map((n) => (
+        <AdvancedMarker key={`cn-${n.id}`} position={{ lat: n.location.lat, lng: n.location.lng }}>
+          <div className="h-1.5 w-1.5 rounded-full bg-slate-400 opacity-60 ring-1 ring-slate-600" />
+        </AdvancedMarker>
+      ))}
 
-      {/* Driver routes — categorical lines */}
-      <Source id="driver-routes" type="geojson" data={routes}>
-        <Layer
-          id="driver-routes-layer"
-          type="line"
-          paint={{
-            "line-color": ["get", "colour"],
-            "line-width": 4,
-            "line-opacity": 0.8,
-          }}
-          layout={{ "line-cap": "round", "line-join": "round" }}
-        />
-      </Source>
+      {/* Driver routes — road-snapped polyline when available, straight fallback otherwise */}
+      {solution?.routes.map((route, idx) => {
+        const path = snappedPolylines[idx] ?? route.polyline;
+        return (
+          <GooglePolyline
+            key={`route-${route.driverParticipantId}`}
+            path={path}
+            color={route.colour ?? driverColour(idx)}
+          />
+        );
+      })}
 
-      {/* Chosen pickup nodes — green */}
-      <Source id="chosen-nodes" type="geojson" data={chosenNodes}>
-        <Layer
-          id="chosen-nodes-layer"
-          type="circle"
-          paint={{
-            "circle-radius": 7,
-            "circle-color": "#10B981",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#065F46",
-          }}
-        />
-      </Source>
+      {/* Pickup stops — green pins. */}
+      {solution?.routes.flatMap((route) =>
+        route.stops.map((s, sidx) => (
+          <AdvancedMarker
+            key={`stop-${route.driverParticipantId}-${sidx}`}
+            position={{ lat: s.location.lat, lng: s.location.lng }}
+          >
+            <div className="h-3.5 w-3.5 rounded-full bg-[#34A853] ring-2 ring-white shadow-md" />
+          </AdvancedMarker>
+        )),
+      )}
 
-      {/* Participant origins — red dots (larger for drivers) */}
-      <Source id="origins" type="geojson" data={origins}>
-        <Layer
-          id="origins-layer"
-          type="circle"
-          paint={{
-            "circle-radius": ["get", "radius"],
-            "circle-color": "#DC2626",
-            "circle-stroke-width": 1.5,
-            "circle-stroke-color": "#7F1D1D",
-          }}
-        />
-      </Source>
+      {/* Participant origins — Maps-blue dots, larger for drivers */}
+      {participants.map((p) => (
+        <AdvancedMarker key={`origin-${p.id}`} position={{ lat: p.origin.lat, lng: p.origin.lng }}>
+          <div
+            className={
+              p.role === "driver"
+                ? "h-4 w-4 rounded-full bg-[#1A73E8] ring-2 ring-white shadow-md"
+                : "h-3 w-3 rounded-full bg-[#1A73E8] ring-2 ring-white shadow-md"
+            }
+            title={p.displayName}
+          />
+        </AdvancedMarker>
+      ))}
 
-      {/* Destination — star */}
-      <Source id="destination" type="geojson" data={destinationFc}>
-        <Layer
-          id="destination-symbol"
-          type="symbol"
-          layout={{
-            "text-field": "★",
-            "text-size": 28,
-            "text-allow-overlap": true,
-            "text-offset": [0, -0.1],
-          }}
-          paint={{
-            "text-color": "#111827",
-            "text-halo-color": "#FBBF24",
-            "text-halo-width": 1.6,
-          }}
-        />
-      </Source>
-    </MapboxMap>
+      {/* Destination — yellow star pin */}
+      <AdvancedMarker
+        position={{ lat: destination.point.lat, lng: destination.point.lng }}
+        title={destination.address}
+      >
+        <div className="text-2xl drop-shadow-md" style={{ textShadow: "0 0 6px #FBBC04" }}>
+          ★
+        </div>
+      </AdvancedMarker>
+    </Map>
   );
 }

@@ -41,8 +41,8 @@ export function ConnectionBadge({
       aria-live="polite"
       title={error?.message}
       className={cn(
-        "bg-background/90 flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium shadow-sm",
-        status === "connected" && "text-emerald-600 dark:text-emerald-400",
+        "bg-card/90 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium shadow-md backdrop-blur-sm ring-1 ring-foreground/5",
+        status === "connected" && "text-success",
         status === "reconnecting" && "text-amber-600 dark:text-amber-400",
         status === "disconnected" && "text-muted-foreground",
         className,

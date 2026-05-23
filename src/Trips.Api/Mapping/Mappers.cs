@@ -57,7 +57,6 @@ internal static class Mappers
         return new ParticipantDto(
             Id: p.Id,
             TripId: p.TripId,
-            UserId: p.UserId,
             DisplayName: p.DisplayName,
             HomeLongitude: p.Home.X,
             HomeLatitude: p.Home.Y,
@@ -84,7 +83,6 @@ internal static class Mappers
         return new ParticipantWithNodesDto(
             Id: p.Id,
             TripId: p.TripId,
-            UserId: p.UserId,
             DisplayName: p.DisplayName,
             HomeLongitude: p.Home.X,
             HomeLatitude: p.Home.Y,

@@ -66,11 +66,22 @@ function arrivalWindowMinutes(earliest: string, latest: string): number {
   return Math.max(0, Math.round(ms / 60_000 / 2));
 }
 
-function statusFromTrip(lockedSolutionId: string | null, departAt: string): TripStatus {
+/**
+ * The backend's `departAt` is the scheduled trip start, set ~1 hour before
+ * the user's intended arrival. UI shows "Arrive by …", so we derive that
+ * from the midpoint of the arrival window and surface it as `arriveBy` on
+ * the FE Trip/TripSummary shape.
+ */
+function arriveByFromWindow(earliest: string, latest: string): string {
+  const mid = (new Date(earliest).getTime() + new Date(latest).getTime()) / 2;
+  return new Date(mid).toISOString();
+}
+
+function statusFromTrip(lockedSolutionId: string | null, referenceTime: string): TripStatus {
   if (!lockedSolutionId) return "draft";
-  const depart = new Date(departAt).getTime();
+  const ref = new Date(referenceTime).getTime();
   const now = Date.now();
-  if (now < depart) return "planned";
+  if (now < ref) return "planned";
   return "in_progress";
 }
 
@@ -80,7 +91,7 @@ export function apiToTripSummary(t: TripDto): TripSummary {
     name: t.name,
     destinationAddress: t.destinationName,
     destination: pointToLatLng(t.destinationLongitude, t.destinationLatitude),
-    departAt: t.departAt,
+    arriveBy: arriveByFromWindow(t.arrivalWindowEarliest, t.arrivalWindowLatest),
     arrivalWindowMinutes: arrivalWindowMinutes(t.arrivalWindowEarliest, t.arrivalWindowLatest),
     status: statusFromTrip(t.lockedSolutionId, t.departAt),
     participantCount: num(t.participantCount),
@@ -126,7 +137,7 @@ export function apiToTrip(t: TripDetailDto): Trip {
     name: t.name,
     destinationAddress: t.destinationName,
     destination: pointToLatLng(t.destinationLongitude, t.destinationLatitude),
-    departAt: t.departAt,
+    arriveBy: arriveByFromWindow(t.arrivalWindowEarliest, t.arrivalWindowLatest),
     arrivalWindowMinutes: arrivalWindowMinutes(t.arrivalWindowEarliest, t.arrivalWindowLatest),
     status: statusFromTrip(t.lockedSolutionId, t.departAt),
     participantCount: participants.length,

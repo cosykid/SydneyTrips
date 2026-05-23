@@ -65,4 +65,11 @@ public sealed class Trip
     public void LockSolution(Guid solutionId) => LockedSolutionId = solutionId;
 
     public void UnlockSolution() => LockedSolutionId = null;
+
+    public void UpdateDestination(Destination destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        DestinationName = destination.Name;
+        DestinationLocation = destination.Location;
+    }
 }

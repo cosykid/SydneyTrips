@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   useTrip,
@@ -21,8 +22,6 @@ import type { PlanMapProps } from "./PlanMap";
 import { WhatIfDialog } from "@/components/whatif/WhatIfDialog";
 import type { Solution } from "@/lib/api/schema";
 
-// Mapbox-gl reaches for `window` at module load, so render the map only on
-// the client. Loading skeleton keeps SSR happy.
 const PlanMap = dynamic<PlanMapProps>(
   () => import("./PlanMap").then((m) => m.PlanMap),
   {
@@ -49,15 +48,15 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     weights,
     setWeight,
     resetWeights,
-    activeRunId,
-    setActiveRunId,
-    selectedSolutionId,
-    selectSolution,
     viewState,
     setViewState,
   } = usePlanStore();
-  const run = useRun({ tripId, runId: activeRunId });
-  const pareto = usePareto(tripId, activeRunId);
+  const activeRunId = usePlanStore((s) => s.byTrip[tripId]?.runId);
+  const selectedSolutionId = usePlanStore((s) => s.byTrip[tripId]?.solutionId);
+  const setActiveRunId = usePlanStore((s) => s.setActiveRunId);
+  const selectSolution = usePlanStore((s) => s.selectSolution);
+  const run = useRun({ tripId, runId: activeRunId, trip: trip.data ?? undefined });
+  const pareto = usePareto(tripId, activeRunId, trip.data ?? undefined);
 
   const [hasOptimisedOnce, setHasOptimisedOnce] = useState(false);
   const [whatIfOpen, setWhatIfOpen] = useState(false);
@@ -66,7 +65,6 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
 
   const data = trip.data;
 
-  // Re-optimise on slider change once the user has done their first run.
   useEffect(() => {
     if (!hasOptimisedOnce || !data) return;
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -79,12 +77,12 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weights.drivingTime, weights.stops, weights.walking, weights.fairness]);
 
-  // Auto-select first pareto solution once available.
   useEffect(() => {
-    if (pareto.data?.solutions.length && !selectedSolutionId) {
-      selectSolution(pareto.data.solutions[0].id);
+    const first = pareto.data?.solutions?.[0];
+    if (first && !selectedSolutionId) {
+      selectSolution(tripId, first.id);
     }
-  }, [pareto.data, selectedSolutionId, selectSolution]);
+  }, [tripId, pareto.data, selectedSolutionId, selectSolution]);
 
   async function runOptimise(currentWeights = weights) {
     try {
@@ -92,11 +90,11 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
         tripId,
         body: { weights: currentWeights },
       });
-      setActiveRunId(runId);
-      selectSolution(undefined);
+      setActiveRunId(tripId, runId);
+      selectSolution(tripId, undefined);
       setHasOptimisedOnce(true);
     } catch (err) {
-      toast.error("Could not start optimisation", {
+      toast.error("Could not start planning", {
         description: err instanceof Error ? err.message : undefined,
       });
     }
@@ -105,23 +103,29 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
   async function onLock(solutionId: string) {
     try {
       await lock.mutateAsync({ tripId, body: { solutionId } });
-      toast.success("Solution locked");
+      toast.success("Plan saved");
     } catch (err) {
-      toast.error("Could not lock", {
+      toast.error("Could not save plan", {
         description: err instanceof Error ? err.message : undefined,
       });
     }
   }
 
+  const paretoSolutions = pareto.data?.solutions ?? undefined;
+  const hasPareto = Boolean(paretoSolutions && paretoSolutions.length);
+
   const computing =
     optimise.isPending ||
-    run.data?.status === "queued" ||
+    run.data?.status === "pending" ||
     run.data?.status === "running" ||
-    (Boolean(activeRunId) && !pareto.data && run.data?.status !== "failed");
+    (Boolean(activeRunId) &&
+      !hasPareto &&
+      run.data?.status !== "failed" &&
+      run.data?.status !== "cancelled");
 
   const selectedSolution = useMemo(
-    () => pareto.data?.solutions.find((s) => s.id === selectedSolutionId),
-    [pareto.data, selectedSolutionId],
+    () => paretoSolutions?.find((s) => s.id === selectedSolutionId),
+    [paretoSolutions, selectedSolutionId],
   );
 
   if (trip.isLoading || !data) {
@@ -132,9 +136,12 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     );
   }
 
+  const participantCount = data.participants.length;
+  const pickupCount = data.candidateNodes.length;
+
   return (
-    <div className="flex h-full w-full">
-      <div className="relative flex-1">
+    <div className="relative h-full w-full overflow-hidden">
+      <div className="absolute inset-0">
         <PlanMap
           destination={{ address: data.destinationAddress, point: data.destination }}
           participants={data.participants}
@@ -144,76 +151,93 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
           viewState={viewState}
           onMove={setViewState}
         />
-        {computing ? (
-          <div
-            className="bg-background/85 absolute inset-0 flex items-center justify-center backdrop-blur-sm"
-            data-testid="computing-overlay"
-          >
-            <div className="bg-card flex flex-col items-center gap-2 rounded-md border px-6 py-4 shadow-sm">
-              <Loader2 className="text-foreground h-5 w-5 animate-spin" />
-              <p className="text-sm font-medium">Computing…</p>
-              <p className="text-muted-foreground text-xs">
-                {run.data?.status ?? optimise.status}
-              </p>
-            </div>
-          </div>
-        ) : null}
-        <div className="bg-background/90 absolute left-4 top-4 flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs shadow-sm">
-          <Link href={`/trips/${tripId}`} className="flex items-center gap-1.5">
-            <ArrowLeft className="h-3.5 w-3.5" /> {data.name}
-          </Link>
-        </div>
       </div>
-      <aside className="bg-card flex h-full w-96 flex-col overflow-y-auto border-l">
-        <div className="space-y-5 p-5">
-          <header className="space-y-1">
-            <h1 className="text-base font-semibold">Planner</h1>
-            <p className="text-muted-foreground text-xs">
-              {data.participants.length} participant
-              {data.participants.length === 1 ? "" : "s"} · {data.candidateNodes.length} candidate
-              nodes
-            </p>
-          </header>
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() => runOptimise()}
-            disabled={computing || optimise.isPending}
+
+      <Card
+        variant="floating"
+        className="absolute top-4 left-4 z-10 flex max-h-[calc(100vh-2rem)] w-[360px] flex-col overflow-y-auto p-5"
+      >
+        <header className="space-y-1.5">
+          <Link
+            href={`/trips/${tripId}`}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
           >
-            <Sparkles className="mr-2 h-4 w-4" />
-            {hasOptimisedOnce ? "Re-run optimisation" : "Optimise"}
-          </Button>
-          <Separator />
-          <WeightSliders
-            weights={weights}
-            onChange={setWeight}
-            onReset={resetWeights}
-            disabled={computing}
-          />
-          {pareto.data ? (
-            <>
-              <Separator />
-              <ParetoCarousel
-                solutions={pareto.data.solutions}
-                selectedSolutionId={selectedSolutionId}
-                onSelect={selectSolution}
-                onLock={onLock}
-                onWhatIf={(s) => {
-                  setWhatIfSolution(s);
-                  setWhatIfOpen(true);
-                }}
-                isLocking={lock.isPending}
-                lockedSolutionId={data.lockedSolutionId}
-              />
-            </>
-          ) : null}
-          {run.data?.status === "failed" ? (
-            <p className="text-destructive text-xs" role="alert">
-              Optimisation failed: {run.data.error ?? "unknown error"}
-            </p>
-          ) : null}
+            <ArrowLeft className="h-3 w-3" /> Back to trip
+          </Link>
+          <h1 className="text-lg font-semibold tracking-tight">{data.name}</h1>
+          <p className="text-muted-foreground text-xs">
+            {participantCount} {participantCount === 1 ? "person" : "people"} ·{" "}
+            {pickupCount} pickup {pickupCount === 1 ? "point" : "points"}
+          </p>
+        </header>
+
+        <Button
+          type="button"
+          className="mt-4 w-full"
+          onClick={() => runOptimise()}
+          disabled={computing || optimise.isPending}
+        >
+          <Sparkles className="mr-2 h-4 w-4" />
+          {hasOptimisedOnce ? "Re-plan" : "Plan trip"}
+        </Button>
+
+        <Separator className="my-4" />
+
+        <WeightSliders
+          weights={weights}
+          onChange={setWeight}
+          onReset={resetWeights}
+          disabled={computing}
+        />
+
+        {hasPareto && paretoSolutions ? (
+          <>
+            <Separator className="my-4" />
+            <ParetoCarousel
+              solutions={paretoSolutions}
+              selectedSolutionId={selectedSolutionId}
+              onSelect={(id) => selectSolution(tripId, id)}
+              onLock={onLock}
+              onWhatIf={(s) => {
+                setWhatIfSolution(s);
+                setWhatIfOpen(true);
+              }}
+              isLocking={lock.isPending}
+              lockedSolutionId={data.lockedSolutionId}
+            />
+          </>
+        ) : null}
+
+        {run.data?.status === "failed" ? (
+          <p className="text-destructive mt-4 text-xs" role="alert">
+            Planning failed: {run.data.error ?? "unknown error"}
+          </p>
+        ) : null}
+      </Card>
+
+      <Card
+        variant="floating"
+        size="sm"
+        className="absolute bottom-4 left-4 z-10 flex flex-row items-center gap-3 px-3 py-2 text-[11px]"
+      >
+        <LegendDot className="bg-success" /> Pickup
+        <LegendDot className="bg-primary" /> People
+        <span className="text-amber-500">★</span> Destination
+      </Card>
+
+      {computing ? (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center"
+          data-testid="computing-overlay"
+        >
+          <div className="bg-background/40 absolute inset-0 backdrop-blur-[2px]" />
+          <Card variant="floating" className="relative flex flex-col items-center gap-2 px-6 py-4">
+            <Loader2 className="text-primary h-5 w-5 animate-spin" />
+            <p className="text-sm font-medium">Finding routes…</p>
+          </Card>
         </div>
-      </aside>
+      ) : null}
+
       {whatIfSolution ? (
         <WhatIfDialog
           open={whatIfOpen}
@@ -228,4 +252,8 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
       ) : null}
     </div>
   );
+}
+
+function LegendDot({ className }: { className: string }): React.JSX.Element {
+  return <span className={`inline-block h-2 w-2 rounded-full ${className}`} />;
 }

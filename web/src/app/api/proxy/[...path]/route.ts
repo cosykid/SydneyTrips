@@ -1,17 +1,18 @@
-// Catch-all API proxy: forwards the request to the upstream Trips API and
-// injects the API JWT pulled from the httpOnly session cookie. The browser
-// only ever sees /api/proxy/... — the real API base URL stays server-side.
+// Catch-all API proxy. The browser only ever talks to /api/proxy/...;
+// we forward to the upstream Trips API with the request's cookies attached so
+// the anonymous `trips_session` cookie issued by the API flows on every call
+// (and any Set-Cookie that comes back is mirrored to the browser).
 //
-// On 401 from the upstream we clear the session cookie so the next nav
-// triggers the optimistic redirect in proxy.ts.
+// No JWT, no auth gate. The API itself decides what the cookie grants.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth/session";
-import { getServerSession } from "@/lib/auth/server";
 
 const UPSTREAM_BASE =
   process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
+// Hop-by-hop headers should never be forwarded — they're scoped to the
+// transport, not the message. We also strip `host` so fetch picks the upstream
+// host from the URL rather than echoing the Next.js host.
 const HOP_BY_HOP = new Set([
   "connection",
   "content-length",
@@ -33,7 +34,6 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
     );
   }
 
-  const session = await getServerSession();
   const search = request.nextUrl.search ?? "";
   const target = `${UPSTREAM_BASE}/${path.join("/")}${search}`;
 
@@ -41,8 +41,9 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
   for (const [key, value] of request.headers.entries()) {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
   }
-  headers.delete("cookie");
-  if (session?.apiJwt) headers.set("authorization", `Bearer ${session.apiJwt}`);
+  // Cookie header from the browser flows straight through — that's how the
+  // upstream API sees the anonymous-session cookie it issued earlier. We do NOT
+  // strip it (the old auth-by-JWT path did).
 
   const init: RequestInit = {
     method: request.method,
@@ -59,22 +60,19 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
   for (const [key, value] of upstream.headers.entries()) {
     if (!HOP_BY_HOP.has(key.toLowerCase())) responseHeaders.set(key, value);
   }
+  // Headers.entries collapses duplicate Set-Cookie headers via getSetCookie.
+  // Re-fetch them explicitly so a multi-cookie response survives the proxy.
+  responseHeaders.delete("set-cookie");
+  const setCookies = upstream.headers.getSetCookie?.() ?? [];
+  for (const sc of setCookies) {
+    responseHeaders.append("set-cookie", sc);
+  }
+
   const buffer = await upstream.arrayBuffer();
-  const res = new NextResponse(buffer, {
+  return new NextResponse(buffer, {
     status: upstream.status,
     headers: responseHeaders,
   });
-
-  if (upstream.status === 401) {
-    res.cookies.set(SESSION_COOKIE, "", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 0,
-      path: "/",
-    });
-  }
-  return res;
 }
 
 interface RouteContext {

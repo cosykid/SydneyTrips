@@ -1,58 +1,72 @@
 "use client";
 
-// Lightweight map for the driver/passenger live views. Shares the Mapbox token
-// + style with PlanMap but only renders the locked solution's routes, the
-// stops, the destination, and a live driver-position dot.
-
 import { useMemo } from "react";
-import MapboxMap, { Layer, Source, Marker } from "react-map-gl/mapbox";
-import "mapbox-gl/dist/mapbox-gl.css";
+import {
+  APIProvider,
+  AdvancedMarker,
+  Map,
+} from "@vis.gl/react-google-maps";
 import { CarFront } from "lucide-react";
-import type { LatLng, SolutionRoute, SolutionStop, Solution } from "@/lib/api/schema";
+import type { LatLng, SolutionRoute, Solution } from "@/lib/api/schema";
+import { GooglePolyline } from "@/lib/map/google-polyline";
+import { useRoutePolylines } from "@/lib/map/useRoutePolylines";
 import { MapFallback } from "@/components/map/MapFallback";
 import type { MapViewState } from "@/lib/store";
 
 export interface LiveMapProps {
   destination: { address: string; point: LatLng };
   route?: SolutionRoute;
-  /** All stops to show with passenger-arrived state. */
+  /** Per-stop "arrived" flag. */
   stopsArrived?: Record<string, boolean>;
-  /** Live driver position dot. */
+  /** Live driver position (live or simulated). */
   driverPosition?: LatLng;
   /** When set, highlight a single stop (e.g. the current passenger's pickup). */
   highlightStopIndex?: number;
   viewState: MapViewState;
   onMove: (next: MapViewState) => void;
-  /** Optionally render the participant's own home as a small marker. */
+  /** Optionally render the passenger's own home as a small marker. */
   participantHome?: LatLng;
 }
 
-interface PointFeature {
-  type: "Feature";
-  geometry: { type: "Point"; coordinates: [number, number] };
-  properties: Record<string, string | number | boolean>;
+const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
+
+export function LiveMap(props: LiveMapProps): React.JSX.Element {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+  if (!apiKey) {
+    // Wrap the route as a single-solution shape so MapFallback can render it.
+    const wrappedSolution: Solution | undefined = props.route
+      ? {
+          id: "wrap",
+          label: "current",
+          metrics: {
+            totalDrivingMinutes: props.route.drivingMinutes,
+            maxDrivingMinutes: props.route.drivingMinutes,
+            totalStops: props.route.stops.length,
+            totalWalkMetres: 0,
+            maxWalkMetres: 0,
+            fairnessIndex: 0,
+          },
+          routes: [props.route],
+        }
+      : undefined;
+    return (
+      <MapFallback
+        destination={props.destination}
+        solution={wrappedSolution}
+        driverPosition={props.driverPosition}
+        participantHome={props.participantHome}
+        highlightStopIndex={props.highlightStopIndex}
+      />
+    );
+  }
+  return (
+    <APIProvider apiKey={apiKey} libraries={["routes"]}>
+      <LiveMapInner {...props} />
+    </APIProvider>
+  );
 }
 
-interface LineFeature {
-  type: "Feature";
-  geometry: { type: "LineString"; coordinates: Array<[number, number]> };
-  properties: Record<string, string | number | boolean>;
-}
-
-interface FeatureCollection<F> {
-  type: "FeatureCollection";
-  features: F[];
-}
-
-function pt(loc: LatLng, props: Record<string, string | number | boolean>): PointFeature {
-  return {
-    type: "Feature",
-    geometry: { type: "Point", coordinates: [loc.lng, loc.lat] },
-    properties: props,
-  };
-}
-
-export function LiveMap({
+function LiveMapInner({
   destination,
   route,
   stopsArrived = {},
@@ -62,190 +76,92 @@ export function LiveMap({
   onMove,
   participantHome,
 }: LiveMapProps): React.JSX.Element {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-
-  const routeFc = useMemo<FeatureCollection<LineFeature>>(() => {
-    if (!route) return { type: "FeatureCollection", features: [] };
-    return {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: route.polyline.map((p) => [p.lng, p.lat] as [number, number]),
-          },
-          properties: { colour: route.colour },
-        },
-      ],
-    };
+  // `route.polyline[0]` is the driver's origin (per `apiRouteToUi` in
+  // adapters.ts) — reuse it directly rather than threading a separate prop.
+  const driverOrigins = useMemo<Record<string, LatLng>>(() => {
+    if (!route || !route.polyline.length) return {};
+    return { [route.driverParticipantId]: route.polyline[0] };
   }, [route]);
 
-  const stopFc = useMemo<FeatureCollection<PointFeature>>(() => {
-    if (!route) return { type: "FeatureCollection", features: [] };
-    return {
-      type: "FeatureCollection",
-      features: route.stops.map((s: SolutionStop, idx) =>
-        pt(s.location, {
-          id: s.candidateNodeId ?? `stop-${idx}`,
-          idx,
-          highlighted: idx === highlightStopIndex,
-          arrived: Boolean(stopsArrived[s.candidateNodeId ?? `stop-${idx}`]),
-          passengerCount: s.passengerIds.length,
-        }),
-      ),
-    };
-  }, [route, highlightStopIndex, stopsArrived]);
-
-  const destinationFc = useMemo<FeatureCollection<PointFeature>>(
-    () => ({
-      type: "FeatureCollection",
-      features: [pt(destination.point, { label: destination.address })],
-    }),
-    [destination.address, destination.point],
+  const snappedPolylines = useRoutePolylines(
+    route ? [route] : [],
+    destination.point,
+    driverOrigins,
   );
 
-  const homeFc = useMemo<FeatureCollection<PointFeature>>(
-    () =>
-      participantHome
-        ? {
-            type: "FeatureCollection",
-            features: [pt(participantHome, { kind: "home" })],
-          }
-        : { type: "FeatureCollection", features: [] },
-    [participantHome],
-  );
-
-  if (!token) {
-    // Wrap the route as a single-solution shape so MapFallback can render it.
-    const wrappedSolution: Solution | undefined = route
-      ? {
-          id: "wrap",
-          label: "current",
-          metrics: {
-            totalDrivingMinutes: route.drivingMinutes,
-            maxDrivingMinutes: route.drivingMinutes,
-            totalStops: route.stops.length,
-            totalWalkMetres: 0,
-            maxWalkMetres: 0,
-            fairnessIndex: 0,
-          },
-          routes: [route],
-        }
-      : undefined;
-    return (
-      <MapFallback
-        destination={destination}
-        solution={wrappedSolution}
-        driverPosition={driverPosition}
-        participantHome={participantHome}
-        highlightStopIndex={highlightStopIndex}
-      />
-    );
-  }
+  const path = route ? snappedPolylines[0] ?? route.polyline : null;
 
   return (
-    <MapboxMap
-      mapboxAccessToken={token}
-      mapStyle="mapbox://styles/mapbox/light-v11"
-      latitude={viewState.latitude}
-      longitude={viewState.longitude}
+    <Map
+      mapId={MAP_ID}
+      center={{ lat: viewState.latitude, lng: viewState.longitude }}
       zoom={viewState.zoom}
-      onMove={(evt) =>
-        onMove({
-          latitude: evt.viewState.latitude,
-          longitude: evt.viewState.longitude,
-          zoom: evt.viewState.zoom,
-        })
-      }
+      gestureHandling="greedy"
+      disableDefaultUI={false}
+      clickableIcons={false}
+      onCameraChanged={(ev) => {
+        const { center, zoom } = ev.detail;
+        onMove({ latitude: center.lat, longitude: center.lng, zoom });
+      }}
       style={{ width: "100%", height: "100%" }}
     >
-      <Source id="live-route" type="geojson" data={routeFc}>
-        <Layer
-          id="live-route-layer"
-          type="line"
-          paint={{
-            "line-color": ["get", "colour"],
-            "line-width": 5,
-            "line-opacity": 0.8,
-          }}
-          layout={{ "line-cap": "round", "line-join": "round" }}
-        />
-      </Source>
+      {route && path ? (
+        <GooglePolyline path={path} color={route.colour ?? "#1A73E8"} weight={6} />
+      ) : null}
 
-      <Source id="live-stops" type="geojson" data={stopFc}>
-        <Layer
-          id="live-stops-layer"
-          type="circle"
-          paint={{
-            "circle-radius": ["case", ["==", ["get", "highlighted"], true], 11, 7],
-            "circle-color": [
-              "case",
-              ["==", ["get", "arrived"], true],
-              "#10B981",
-              ["==", ["get", "highlighted"], true],
-              "#F59E0B",
-              "#3B82F6",
-            ],
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#1F2937",
-          }}
-        />
-      </Source>
-
-      <Source id="live-destination" type="geojson" data={destinationFc}>
-        <Layer
-          id="live-destination-layer"
-          type="symbol"
-          layout={{
-            "text-field": "★",
-            "text-size": 28,
-            "text-allow-overlap": true,
-          }}
-          paint={{
-            "text-color": "#111827",
-            "text-halo-color": "#FBBF24",
-            "text-halo-width": 1.6,
-          }}
-        />
-      </Source>
+      {route?.stops.map((s, idx) => {
+        const key = s.candidateNodeId ?? `stop-${idx}`;
+        const arrived = Boolean(stopsArrived[key]);
+        const highlighted = idx === highlightStopIndex;
+        const color = arrived ? "bg-[#34A853]" : highlighted ? "bg-[#FBBC04]" : "bg-[#1A73E8]";
+        const size = highlighted ? "h-4 w-4" : "h-3 w-3";
+        return (
+          <AdvancedMarker
+            key={`stop-${idx}`}
+            position={{ lat: s.location.lat, lng: s.location.lng }}
+          >
+            <div
+              className={`${size} ${color} rounded-full ring-2 ring-white shadow-md`}
+              title={highlighted ? "Your pickup" : `Stop ${idx + 1}`}
+            />
+          </AdvancedMarker>
+        );
+      })}
 
       {participantHome ? (
-        <Source id="live-home" type="geojson" data={homeFc}>
-          <Layer
-            id="live-home-layer"
-            type="circle"
-            paint={{
-              "circle-radius": 5,
-              "circle-color": "#DC2626",
-              "circle-stroke-width": 1.5,
-              "circle-stroke-color": "#7F1D1D",
-            }}
-          />
-        </Source>
+        <AdvancedMarker position={{ lat: participantHome.lat, lng: participantHome.lng }}>
+          <div className="h-3.5 w-3.5 rounded-full bg-[#EA4335] ring-2 ring-white shadow-md" />
+        </AdvancedMarker>
       ) : null}
 
       {driverPosition ? (
-        <Marker
-          longitude={driverPosition.lng}
-          latitude={driverPosition.lat}
-          anchor="center"
+        <AdvancedMarker
+          position={{ lat: driverPosition.lat, lng: driverPosition.lng }}
+          title="Driver"
         >
           <div
-            className="bg-primary text-primary-foreground flex h-7 w-7 items-center justify-center rounded-full shadow-lg ring-2 ring-white"
+            className="bg-[#1A73E8] text-white flex h-8 w-8 items-center justify-center rounded-full shadow-lg ring-2 ring-white"
             data-testid="driver-dot"
             aria-label="Driver position"
           >
-            <CarFront className="h-3.5 w-3.5" />
+            <CarFront className="h-4 w-4" />
           </div>
-        </Marker>
+        </AdvancedMarker>
       ) : null}
-    </MapboxMap>
+
+      <AdvancedMarker
+        position={{ lat: destination.point.lat, lng: destination.point.lng }}
+        title={destination.address}
+      >
+        <div className="text-3xl drop-shadow-md" style={{ textShadow: "0 0 8px #FBBC04" }}>
+          ★
+        </div>
+      </AdvancedMarker>
+    </Map>
   );
 }
 
-// Helper: pick a sensible centre/zoom for a given collection of points so the
-// caller can seed `viewState` without doing the maths.
+/** Pick a sensible centre/zoom for a given collection of points. */
 export function fitBounds(
   points: LatLng[],
   fallback: MapViewState,

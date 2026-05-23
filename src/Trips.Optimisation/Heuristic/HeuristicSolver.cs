@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using NetTopologySuite.Geometries;
 using Trips.Core.Abstractions;
 using Trips.Core.Domain;
 using Trips.Optimisation.Common;
@@ -62,7 +61,6 @@ public sealed class HeuristicSolver : ISolver
     {
         ArgumentNullException.ThrowIfNull(input);
         var destIndex = FindDestinationIndex(input);
-        var nodeLocations = PlaceholderNodeLocations(input.Nodes.Count);
 
         var state = ConstructInitial(input, destIndex);
         var stopwatch = Stopwatch.StartNew();
@@ -130,7 +128,7 @@ public sealed class HeuristicSolver : ISolver
         _logger.LogInformation("Heuristic done iters={Iter} accepted={Acc} best={Best} wall={Wall}ms",
             iterations, accepted, bestEval.Objective, stopwatch.ElapsedMilliseconds);
 
-        return SolutionBuilder.Build(input, "Heuristic", best.RoutesView(), best.NodeChoicePerPassenger, best.DriverPerPassenger, destIndex, nodeLocations);
+        return SolutionBuilder.Build(input, "Heuristic", best.RoutesView(), best.NodeChoicePerPassenger, best.DriverPerPassenger, destIndex);
     }
 
     // ---------------- Construction ----------------
@@ -333,13 +331,6 @@ public sealed class HeuristicSolver : ISolver
             if (input.Nodes[i].CandidateNodeId is null && !origins.Contains(i)) return i;
         }
         throw new InvalidOperationException("Destination row not found.");
-    }
-
-    private static IReadOnlyList<Point> PlaceholderNodeLocations(int count)
-    {
-        var arr = new Point[count];
-        for (var i = 0; i < count; i++) arr[i] = new Point(0, 0) { SRID = 4326 };
-        return arr;
     }
 
     /// <summary>Mutable state shared by the move operators. The raw <see cref="List{T}"/>s are kept

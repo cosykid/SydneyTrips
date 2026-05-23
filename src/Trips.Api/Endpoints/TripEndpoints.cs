@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NetTopologySuite.Geometries;
 using Trips.Api.Auth;
@@ -15,7 +14,7 @@ public static class TripEndpoints
     public static IEndpointRouteBuilder MapTrips(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        var group = app.MapGroup("/trips").WithTags("Trips").RequireAuthorization();
+        var group = app.MapGroup("/trips").WithTags("Trips");
 
         group.MapPost("/", CreateAsync)
             .AddEndpointFilter<ValidationFilter<CreateTripRequest>>()
@@ -24,23 +23,48 @@ public static class TripEndpoints
         group.MapGet("/", ListAsync).WithName("ListTrips");
         group.MapGet("/{id:guid}", GetAsync).WithName("GetTrip");
         group.MapDelete("/{id:guid}", DeleteAsync).WithName("DeleteTrip");
+        group.MapPatch("/{id:guid}/destination", UpdateDestinationAsync)
+            .AddEndpointFilter<ValidationFilter<UpdateTripDestinationRequest>>()
+            .WithName("UpdateTripDestination");
 
         return app;
     }
 
-    private static async Task<Results<Created<TripDto>, ProblemHttpResult>> CreateAsync(
+    private static async Task<Results<Ok<TripDto>, NotFound>> UpdateDestinationAsync(
+        Guid id,
+        UpdateTripDestinationRequest request,
+        TripAuthorizationService authz,
+        ITripRepository trips,
+        CancellationToken ct)
+    {
+        var trip = await authz.LookupAsync(id, ct).ConfigureAwait(false);
+        if (trip is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var factory = new GeometryFactory(new PrecisionModel(), 4326);
+        var dest = new Destination(
+            request.DestinationName,
+            factory.CreatePoint(new Coordinate(request.DestinationLongitude, request.DestinationLatitude)));
+        trip.UpdateDestination(dest);
+        await trips.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        return TypedResults.Ok(trip.ToDto());
+    }
+
+    private static async Task<Created<TripDto>> CreateAsync(
         CreateTripRequest request,
         ITripRepository trips,
         ITripEventRepository events,
-        CurrentUser currentUser,
+        CurrentSession session,
         IClock clock,
-        HttpContext http,
         CancellationToken ct)
     {
-        if (currentUser.UserIdGuid == Guid.Empty)
-        {
-            return TypedResults.Problem("User context missing.", statusCode: StatusCodes.Status401Unauthorized, extensions: Trace(http));
-        }
+        // The anonymous-session middleware guarantees a non-empty SessionId for any request
+        // that actually traversed the pipeline; we don't reject Guid.Empty here because we'd
+        // rather a fresh browser get its trip created with a fresh cookie than be told to retry.
+        var ownerId = session.SessionId;
 
         var factory = new GeometryFactory(new PrecisionModel(), 4326);
         var dest = new Destination(
@@ -53,7 +77,7 @@ public static class TripEndpoints
             destination: dest,
             departAt: request.DepartAt,
             arrivalWindow: new ArrivalWindow(request.ArrivalWindowEarliest, request.ArrivalWindowLatest),
-            ownerId: currentUser.UserIdGuid,
+            ownerId: ownerId,
             createdAt: clock.UtcNow);
 
         await trips.AddAsync(trip, ct).ConfigureAwait(false);
@@ -61,7 +85,7 @@ public static class TripEndpoints
             id: Guid.NewGuid(),
             tripId: trip.Id,
             kind: EventKind.TripCreated,
-            actorId: currentUser.UserIdGuid,
+            actorId: ownerId,
             location: dest.Location,
             timestamp: clock.UtcNow), ct).ConfigureAwait(false);
         await trips.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -71,28 +95,27 @@ public static class TripEndpoints
 
     private static async Task<Ok<IReadOnlyList<TripDto>>> ListAsync(
         ITripRepository trips,
-        CurrentUser currentUser,
+        CurrentSession session,
         CancellationToken ct)
     {
-        var rows = await trips.ListForOwnerAsync(currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var rows = await trips.ListForOwnerAsync(session.SessionId, ct).ConfigureAwait(false);
         IReadOnlyList<TripDto> dtos = rows.Select(r => r.ToDto()).ToList();
         return TypedResults.Ok(dtos);
     }
 
-    private static async Task<Results<Ok<TripDetailDto>, NotFound, ForbidHttpResult>> GetAsync(
+    private static async Task<Results<Ok<TripDetailDto>, NotFound>> GetAsync(
         Guid id,
         TripAuthorizationService authz,
         ITripRepository trips,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var authorized = await authz.AuthorizeAsync(id, currentUser.UserIdGuid, ct).ConfigureAwait(false);
-        if (authorized is null)
+        var trip = await authz.LookupAsync(id, ct).ConfigureAwait(false);
+        if (trip is null)
         {
             return TypedResults.NotFound();
         }
-        // AuthorizeAsync only loads the trip itself — re-fetch with participants + candidate
-        // nodes so the planner / driver / cost-split views render in one round-trip.
+        // Lookup only loaded the trip itself — re-fetch with participants + candidate nodes
+        // so the planner / driver / cost-split views render in one round-trip.
         var full = await trips.GetWithParticipantsAsync(id, ct).ConfigureAwait(false);
         if (full is null)
         {
@@ -104,11 +127,13 @@ public static class TripEndpoints
     private static async Task<Results<NoContent, NotFound>> DeleteAsync(
         Guid id,
         ITripRepository trips,
-        CurrentUser currentUser,
+        CurrentSession session,
         CancellationToken ct)
     {
+        // Delete is the one operation that's actually owner-only — anyone with the trip ID
+        // can read or modify, but only the browser that created it can drop it.
         var trip = await trips.GetByIdAsync(id, ct).ConfigureAwait(false);
-        if (trip is null || trip.OwnerId != currentUser.UserIdGuid)
+        if (trip is null || trip.OwnerId != session.SessionId)
         {
             return TypedResults.NotFound();
         }
@@ -116,7 +141,4 @@ public static class TripEndpoints
         await trips.SaveChangesAsync(ct).ConfigureAwait(false);
         return TypedResults.NoContent();
     }
-
-    private static IDictionary<string, object?> Trace(HttpContext http) =>
-        new Dictionary<string, object?> { ["traceId"] = http.TraceIdentifier };
 }

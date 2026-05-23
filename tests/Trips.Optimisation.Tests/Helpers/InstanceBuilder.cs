@@ -1,3 +1,4 @@
+using NetTopologySuite.Geometries;
 using Trips.Core.Abstractions;
 using Trips.Core.Domain;
 
@@ -25,10 +26,14 @@ internal static class InstanceBuilder
         var drivers = new List<SolverDriver>(driverCount);
         for (var d = 0; d < driverCount; d++) drivers.Add(new SolverDriver(Guid.NewGuid(), d, driverSeats[d]));
 
+        // Coordinates don't drive solver behaviour (the matrix does) — give each node a distinct,
+        // non-degenerate Sydney-ish point so SolutionBuilder stamps a real Stop.Location.
+        static Point Pt(int i) => new(151.0 + i * 0.01, -33.8 - i * 0.01) { SRID = 4326 };
+
         var nodes = new List<SolverNode>();
-        for (var i = 0; i < driverCount; i++) nodes.Add(new SolverNode(i, NodeKind.Home, null));
-        for (var i = 0; i < candidateCount; i++) nodes.Add(new SolverNode(driverCount + i, NodeKind.Home, Guid.NewGuid()));
-        nodes.Add(new SolverNode(driverCount + candidateCount, NodeKind.TrainStation, null)); // destination
+        for (var i = 0; i < driverCount; i++) nodes.Add(new SolverNode(i, NodeKind.Home, null, Pt(i)));
+        for (var i = 0; i < candidateCount; i++) nodes.Add(new SolverNode(driverCount + i, NodeKind.Home, Guid.NewGuid(), Pt(driverCount + i)));
+        nodes.Add(new SolverNode(driverCount + candidateCount, NodeKind.TrainStation, null, Pt(driverCount + candidateCount))); // destination
 
         var passengers = new List<SolverPassenger>(passengerCandidatesLocal.Length);
         for (var p = 0; p < passengerCandidatesLocal.Length; p++)

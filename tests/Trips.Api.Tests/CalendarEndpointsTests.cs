@@ -46,17 +46,16 @@ public sealed class CalendarEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Calendar_blocks_non_participant_caller()
+    public async Task Calendar_is_readable_across_sessions()
     {
+        // Anonymous share-link model: anyone with the trip + participant id can fetch the .ics.
         var (ownerClient, _) = await _factory.CreateAuthenticatedClientAsync("cal2-owner@example.com");
         var (tripId, driverId) = await SetupAsync(ownerClient);
         await OptimiseAndLockAsync(ownerClient, tripId);
 
-        // Another user who is NOT the trip owner nor any participant of this trip.
         var (otherClient, _) = await _factory.CreateAuthenticatedClientAsync("cal2-other@example.com");
         var response = await otherClient.GetAsync($"/trips/{tripId}/participants/{driverId}/calendar.ics");
-        // TripAuthorizationService treats non-owner/non-participant as 404 to avoid leaking trip existence.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static async Task<(Guid TripId, Guid ParticipantId)> SetupAsync(HttpClient client)

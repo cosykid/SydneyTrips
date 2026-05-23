@@ -37,6 +37,7 @@ type ApiTripDetailDto = components["schemas"]["TripDetailDto"];
 type ApiParticipantDto = components["schemas"]["ParticipantDto"];
 type ApiCostSplitResponse = components["schemas"]["CostSplitResponse"];
 type ApiSolutionDto = components["schemas"]["SolutionDto"];
+type ApiRunWithSolutionDto = components["schemas"]["OptimisationRunDtoWithSolution"];
 
 export const tripKeys = {
   all: ["trips"] as const,
@@ -72,25 +73,59 @@ export function useCreateTrip(): UseMutationResult<TripSummary, ApiError, Create
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (body) => {
-      // The UI's CreateTripRequest uses arrivalWindowMinutes + destination LatLng;
-      // the API wants explicit earliest/latest + flat lon/lat. Translate here so
-      // the form component doesn't have to know.
-      const departIso = body.departAt;
-      const departMs = new Date(departIso).getTime();
+      // The UI expresses target time as `arriveBy`; the API still has a
+      // `departAt` field (treated as the earliest possible trip start) plus
+      // an explicit arrival window. We give `departAt` a 60-minute head-start
+      // before the target arrival so the solver has room to schedule each
+      // driver's actual departure based on their route length.
+      const arrivalMs = new Date(body.arriveBy).getTime();
       const halfWindowMs = body.arrivalWindowMinutes * 60_000;
+      const departMs = arrivalMs - 60 * 60_000;
       const apiBody = {
         name: body.name,
         destinationName: body.destinationAddress,
         destinationLongitude: body.destination?.lng ?? 0,
         destinationLatitude: body.destination?.lat ?? 0,
-        departAt: departIso,
-        arrivalWindowEarliest: new Date(departMs + 30 * 60_000 - halfWindowMs).toISOString(),
-        arrivalWindowLatest: new Date(departMs + 30 * 60_000 + halfWindowMs).toISOString(),
+        departAt: new Date(departMs).toISOString(),
+        arrivalWindowEarliest: new Date(arrivalMs - halfWindowMs).toISOString(),
+        arrivalWindowLatest: new Date(arrivalMs + halfWindowMs).toISOString(),
       };
       const dto = await apiFetch<ApiTripDto>("/trips", { method: "POST", body: apiBody });
       return apiToTripSummary(dto);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: tripKeys.list() }),
+  });
+}
+
+interface UpdateDestinationVars {
+  tripId: Uuid;
+  destinationAddress: string;
+  destination: { lat: number; lng: number };
+}
+
+export function useUpdateTripDestination(): UseMutationResult<
+  TripSummary,
+  ApiError,
+  UpdateDestinationVars
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, destinationAddress, destination }) => {
+      const apiBody = {
+        destinationName: destinationAddress,
+        destinationLongitude: destination.lng,
+        destinationLatitude: destination.lat,
+      };
+      const dto = await apiFetch<ApiTripDto>(`/trips/${tripId}/destination`, {
+        method: "PATCH",
+        body: apiBody,
+      });
+      return apiToTripSummary(dto);
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: tripKeys.detail(vars.tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.list() });
+    },
   });
 }
 
@@ -159,21 +194,57 @@ interface RunVars {
   tripId: Uuid;
   runId: Uuid | undefined;
   pollMs?: number;
+  /** Pass the trip so the inline `solution` can be adapted to UI shape. */
+  trip?: Trip;
 }
 
 export function useRun({
   tripId,
   runId,
   pollMs = 1000,
+  trip,
 }: RunVars): UseQueryResult<RunSolutionResponse, ApiError> {
   return useQuery({
     queryKey: runId ? tripKeys.run(tripId, runId) : ["trips", "run", tripId, "_"],
-    queryFn: () => apiFetch<RunSolutionResponse>(`/trips/${tripId}/runs/${runId}`),
+    // The wire shape is `{ run: OptimisationRunDto, solution?: SolutionDto }`;
+    // flatten it here so callers can read `status`/`error`/`solution` directly
+    // without having to know about the API's composite envelope. `solution`
+    // is adapted via `apiToSolution` when we have trip context — when we
+    // don't (e.g. background polling before the trip query resolves) we leave
+    // it raw and let the consumer skip displaying it.
+    queryFn: async (): Promise<RunSolutionResponse> => {
+      const dto = await apiFetch<ApiRunWithSolutionDto>(
+        `/trips/${tripId}/runs/${runId}`,
+      );
+      return {
+        id: dto.run.id,
+        tripId: dto.run.tripId,
+        status: dto.run.status,
+        createdAt: dto.run.startedAt,
+        completedAt: dto.run.completedAt ?? undefined,
+        error: dto.run.failureReason ?? undefined,
+        solution:
+          dto.solution && trip ? apiToSolution(dto.solution, trip) : undefined,
+      };
+    },
     enabled: Boolean(runId),
+    // 4xx errors (most commonly 404 for a stale/missing runId) are terminal —
+    // don't retry into a hot loop and don't keep polling.
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        return false;
+      }
+      return failureCount < 3;
+    },
     refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
       const data = query.state.data;
       if (!data) return pollMs;
-      return data.status === "completed" || data.status === "failed" ? false : pollMs;
+      return data.status === "completed" ||
+        data.status === "failed" ||
+        data.status === "cancelled"
+        ? false
+        : pollMs;
     },
   });
 }
@@ -181,11 +252,23 @@ export function useRun({
 export function usePareto(
   tripId: Uuid,
   runId: Uuid | undefined,
+  trip?: Trip,
 ): UseQueryResult<ParetoResponse, ApiError> {
   return useQuery({
     queryKey: runId ? tripKeys.pareto(tripId, runId) : ["trips", "pareto", tripId, "_"],
-    queryFn: () => apiFetch<ParetoResponse>(`/trips/${tripId}/runs/${runId}/pareto`),
-    enabled: Boolean(runId),
+    // Wire shape is `SolutionDto[]`; wrap as `{ runId, solutions }` and adapt
+    // each entry via `apiToSolution` so the UI gets metrics + driver display
+    // names. Disabled until we have a trip to adapt against.
+    queryFn: async (): Promise<ParetoResponse> => {
+      const arr = await apiFetch<ApiSolutionDto[]>(
+        `/trips/${tripId}/runs/${runId}/pareto`,
+      );
+      return {
+        runId: runId as Uuid,
+        solutions: trip ? arr.map((s) => apiToSolution(s, trip)) : [],
+      };
+    },
+    enabled: Boolean(runId) && Boolean(trip),
   });
 }
 

@@ -41,3 +41,9 @@ public sealed record CreateTripRequest(
     DateTimeOffset DepartAt,
     DateTimeOffset ArrivalWindowEarliest,
     DateTimeOffset ArrivalWindowLatest);
+
+/// <summary>Payload to PATCH /trips/{id}/destination.</summary>
+public sealed record UpdateTripDestinationRequest(
+    string DestinationName,
+    double DestinationLongitude,
+    double DestinationLatitude);

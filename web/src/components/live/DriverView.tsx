@@ -1,9 +1,5 @@
 "use client";
 
-// Driver live view — left side full-height map, right side manifest panel
-// (pickup stops, ETAs, "Arrived" buttons, deep-link map apps, geolocation
-// permission UI).
-
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
@@ -24,7 +20,6 @@ import { SYDNEY_CBD, type MapViewState } from "@/lib/store";
 import type {
   EtaUpdatedPayload,
   PassengerAtStopPayload,
-  RouteRecomputedPayload,
 } from "@/lib/realtime/hub";
 import type { LatLng, Solution, SolutionRoute } from "@/lib/api/schema";
 
@@ -66,15 +61,15 @@ function StopRow({
   const appleHref = `https://maps.apple.com/?daddr=${stop.location.lat},${stop.location.lng}`;
   return (
     <li
-      className="flex flex-col gap-2 rounded-md border p-3"
+      className="flex flex-col gap-2 rounded-lg border p-3"
       aria-current={arrived ? "false" : undefined}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <span className="bg-muted text-foreground/80 flex h-6 w-6 items-center justify-center rounded-full text-xs">
+          <span className="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold">
             {index + 1}
           </span>
-          <span>{format(eta, "HH:mm")}</span>
+          <span className="tabular-nums">{format(eta, "HH:mm")}</span>
           <Badge variant={arrived ? "default" : "secondary"}>
             {arrived ? "Arrived" : `${stop.passengerIds.length} pickup${stop.passengerIds.length === 1 ? "" : "s"}`}
           </Badge>
@@ -94,7 +89,7 @@ function StopRow({
           <li key={pid} className="flex items-center gap-1.5">
             <MapPin className="h-3 w-3" />
             <span className="text-foreground">{passengerNames.get(pid) ?? "Unknown rider"}</span>
-            <span>· walk {stop.walkMetres.toFixed(0)} m</span>
+            <span>· {stop.walkMetres.toFixed(0)} m walk</span>
           </li>
         ))}
       </ul>
@@ -162,9 +157,6 @@ export function DriverView({
     ];
   }, [driverRoute]);
 
-  // Compute the initial view from the route the first time it loads; once the
-  // user pans/zooms we keep their view (stored in `userView`). This avoids
-  // calling setState from inside an effect, which React 19 flags.
   const fittedView = useMemo<MapViewState>(
     () => (allPoints.length ? fitBounds(allPoints, SYDNEY_CBD) : { ...SYDNEY_CBD }),
     [allPoints],
@@ -173,27 +165,24 @@ export function DriverView({
   const viewState = userView ?? fittedView;
   const setViewState = (v: MapViewState): void => setUserView(v);
 
-  // Geolocation + hub wiring.
   const hub = useTripHub(tripId);
   const { fix, permission, error: geoError } = useDriverPosition({
     enabled: Boolean(driverRoute) && hub.status === "connected",
     simulated: useSimulated,
   });
 
-  // Broadcast every fresh fix.
   useEffect(() => {
-    if (!fix) return;
-    hub.publishDriverPosition(fix.lat, fix.lng).catch(() => {
+    if (!fix || !currentUserParticipantId) return;
+    hub.publishDriverPosition(currentUserParticipantId, fix.lat, fix.lng).catch(() => {
       /* swallowed inside hub */
     });
-  }, [fix, hub]);
+  }, [fix, hub, currentUserParticipantId]);
 
-  // Toasts on hub events of interest.
   useEffect(() => {
     const off1 = hub.onEtaUpdated((p: EtaUpdatedPayload) => {
       const name = passengerNames.get(p.passengerId) ?? "A passenger";
       const newEta = new Date(p.newEta);
-      toast.info(`${name} ETA updated`, {
+      toast.info(`${name}'s pickup time changed`, {
         description: `Now ${format(newEta, "HH:mm")}`,
       });
     });
@@ -201,8 +190,10 @@ export function DriverView({
       const name = passengerNames.get(p.passengerId) ?? "A passenger";
       toast.success(`${name} is at the stop`);
     });
-    const off3 = hub.onRouteRecomputed((p: RouteRecomputedPayload) => {
-      toast.warning("Route recomputed", { description: `New solution ${p.solutionId.slice(0, 8)}` });
+    const off3 = hub.onRouteRecomputed(() => {
+      toast.warning("Your route has been updated", {
+        description: "Stops or order may have changed.",
+      });
     });
     return () => {
       off1();
@@ -214,13 +205,11 @@ export function DriverView({
   async function onArrive(stopKey: string, passengerIds: string[]): Promise<void> {
     setBusy(true);
     try {
-      // The server hub method as specced takes (tripId, stopId) per
-      // passenger event. We fire one check-in per passenger at this stop so
-      // the manifest stays in sync regardless of server-side fan-out.
+      // Driver-side "arrived" is really N passenger check-ins, one per pickup.
+      // The hub now needs the participant id of whoever is checking in (no
+      // implicit user identity), so we send the passenger id for each.
       for (const pid of passengerIds) {
-        await hub.passengerCheckIn(stopKey);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const _ = pid; // keep loop semantics — server uses driverId from auth
+        await hub.passengerCheckIn(pid, stopKey);
       }
       setArrivedStops((s) => ({ ...s, [stopKey]: true }));
       toast.success("Marked arrived");
@@ -255,8 +244,8 @@ export function DriverView({
   if (!locked.data) {
     return (
       <EmptyState
-        title="No solution locked"
-        body="Lock a solution from the planner before opening the driver view."
+        title="No plan chosen yet"
+        body="Pick a plan from the planner before opening the driver view."
         tripId={tripId}
       />
     );
@@ -265,16 +254,16 @@ export function DriverView({
   if (!driverRoute) {
     return (
       <EmptyState
-        title="You are not the driver for this trip"
-        body="This page is only available to the driver assigned in the locked solution."
+        title="You're not the driver for this trip"
+        body="This page is only available to the driver in the chosen plan."
         tripId={tripId}
       />
     );
   }
 
   return (
-    <div className="flex h-full w-full">
-      <div className="relative flex-1">
+    <div className="relative h-full w-full overflow-hidden">
+      <div className="absolute inset-0">
         <LiveMap
           destination={{ address: trip.data.destinationAddress, point: trip.data.destination }}
           route={driverRoute}
@@ -283,87 +272,95 @@ export function DriverView({
           viewState={viewState}
           onMove={setViewState}
         />
-        <div className="bg-background/90 absolute left-4 top-4 flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs shadow-sm">
-          <Link href={`/trips/${tripId}`} className="flex items-center gap-1.5">
-            <ArrowLeft className="h-3.5 w-3.5" /> {trip.data.name}
-          </Link>
-        </div>
-        <div className="absolute right-4 top-4">
-          <ConnectionBadge status={hub.status} error={hub.error} />
-        </div>
       </div>
-      <aside className="bg-card flex h-full w-96 flex-col overflow-y-auto border-l">
-        <div className="space-y-4 p-5">
-          <header>
-            <h1 className="text-base font-semibold">Driver manifest</h1>
-            <p className="text-muted-foreground text-xs">
-              {driverRoute.stops.length} stop{driverRoute.stops.length === 1 ? "" : "s"} ·{" "}
-              {driverRoute.drivingMinutes.toFixed(0)} min total
-            </p>
-          </header>
 
-          <Card size="sm">
-            <CardContent className="space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">Location sharing</span>
-                <Badge variant={fix ? "default" : "secondary"}>
-                  {fix ? (fix.source === "simulated" ? "Simulated" : "Live") : "Off"}
-                </Badge>
-              </div>
-              {permission === "denied" ? (
-                <p className="text-destructive" role="alert">
-                  Location permission denied. Re-grant access in your browser to broadcast your
-                  position.
-                </p>
-              ) : permission === "prompt" || permission === "unknown" ? (
-                <p className="text-muted-foreground">
-                  Your browser will ask for location access on first broadcast.
-                </p>
-              ) : null}
-              {geoError ? (
-                <p className="text-destructive" role="alert">
-                  {geoError}
-                </p>
-              ) : null}
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant={useSimulated ? "secondary" : "ghost"}
-                  onClick={() => setUseSimulated((s) => !s)}
-                  data-testid="toggle-simulated"
-                >
-                  {useSimulated ? "Stop simulation" : "Use simulated position"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      <Card
+        variant="floating"
+        size="sm"
+        className="absolute top-4 left-4 z-10 flex flex-row items-center gap-2 px-3 py-1.5 text-xs"
+      >
+        <Link href={`/trips/${tripId}`} className="flex items-center gap-1.5">
+          <ArrowLeft className="h-3.5 w-3.5" /> {trip.data.name}
+        </Link>
+      </Card>
 
-          <Separator />
+      <div className="absolute top-4 right-4 z-10">
+        <ConnectionBadge status={hub.status} error={hub.error} />
+      </div>
 
-          {driverRoute.stops.length === 0 ? (
-            <p className="text-muted-foreground text-xs">No pickup stops on this route.</p>
-          ) : (
-            <ul className="space-y-2" data-testid="driver-manifest">
-              {driverRoute.stops.map((stop, idx) => {
-                const stopKey = stop.candidateNodeId ?? `stop-${idx}`;
-                return (
-                  <StopRow
-                    key={stopKey}
-                    index={idx}
-                    stop={stop}
-                    passengerNames={passengerNames}
-                    eta={new Date(stop.arriveAt)}
-                    arrived={Boolean(arrivedStops[stopKey])}
-                    onArrive={() => onArrive(stopKey, stop.passengerIds)}
-                    busy={busy}
-                  />
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </aside>
+      <Card
+        variant="floating"
+        className="absolute right-4 top-16 bottom-4 z-10 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto p-5"
+      >
+        <header>
+          <h1 className="text-lg font-semibold tracking-tight">Your stops</h1>
+          <p className="text-muted-foreground text-xs">
+            {driverRoute.stops.length} stop{driverRoute.stops.length === 1 ? "" : "s"} ·{" "}
+            {driverRoute.drivingMinutes.toFixed(0)} min driving
+          </p>
+        </header>
+
+        <Card size="sm" className="mt-4">
+          <CardContent className="space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Location sharing</span>
+              <Badge variant={fix ? "default" : "secondary"}>
+                {fix ? (fix.source === "simulated" ? "Demo" : "Live") : "Off"}
+              </Badge>
+            </div>
+            {permission === "denied" ? (
+              <p className="text-destructive" role="alert">
+                Location permission denied. Re-grant access in your browser to share your
+                position with riders.
+              </p>
+            ) : permission === "prompt" || permission === "unknown" ? (
+              <p className="text-muted-foreground">
+                Your browser will ask for location access when you start the trip.
+              </p>
+            ) : null}
+            {geoError ? (
+              <p className="text-destructive" role="alert">
+                {geoError}
+              </p>
+            ) : null}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="xs"
+                variant={useSimulated ? "secondary" : "ghost"}
+                onClick={() => setUseSimulated((s) => !s)}
+                data-testid="toggle-simulated"
+              >
+                {useSimulated ? "Stop demo" : "Demo location"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Separator className="my-4" />
+
+        {driverRoute.stops.length === 0 ? (
+          <p className="text-muted-foreground text-xs">No pickup stops on this route.</p>
+        ) : (
+          <ul className="space-y-2" data-testid="driver-manifest">
+            {driverRoute.stops.map((stop, idx) => {
+              const stopKey = stop.candidateNodeId ?? `stop-${idx}`;
+              return (
+                <StopRow
+                  key={stopKey}
+                  index={idx}
+                  stop={stop}
+                  passengerNames={passengerNames}
+                  eta={new Date(stop.arriveAt)}
+                  arrived={Boolean(arrivedStops[stopKey])}
+                  onArrive={() => onArrive(stopKey, stop.passengerIds)}
+                  busy={busy}
+                />
+              );
+            })}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

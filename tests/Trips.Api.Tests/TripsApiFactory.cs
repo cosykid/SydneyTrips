@@ -1,5 +1,4 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -11,7 +10,6 @@ using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
 using Trips.Api.Stubs;
 using Trips.Core.Abstractions;
-using Trips.Core.Contracts;
 using Trips.Data;
 using Trips.Optimisation.OrTools;
 
@@ -64,9 +62,6 @@ public sealed class TripsApiFactory : WebApplicationFactory<Program>, IAsyncLife
             cfg.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Trips"] = ConnectionString,
-                ["Auth:JwtKey"] = "this-is-a-very-long-test-key-for-jwt-signing-purposes-32-bytes!!",
-                ["Auth:Issuer"] = "SydneyTrips.Tests",
-                ["Auth:Audience"] = "SydneyTrips.Tests.Client",
                 ["Optimisation:MaxConcurrent"] = "2",
             });
         });
@@ -86,29 +81,31 @@ public sealed class TripsApiFactory : WebApplicationFactory<Program>, IAsyncLife
         });
     }
 
-    /// <summary>
-    /// Removes every row from the domain tables. Identity tables are left intact so multiple
-    /// tests can share registered users where convenient.
-    /// </summary>
+    /// <summary>Removes every row from the domain tables.</summary>
     public async Task ResetAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TripsDbContext>();
         await db.Database.ExecuteSqlRawAsync("""
             TRUNCATE TABLE "stops", "driver_routes", "solutions", "optimisation_runs",
-                "candidate_nodes", "participants", "trip_events", "trips",
-                "AspNetUserTokens", "AspNetUserRoles", "AspNetUserLogins", "AspNetUserClaims",
-                "AspNetUsers", "AspNetRoleClaims", "AspNetRoles"
+                "candidate_nodes", "participants", "trip_events", "trips"
             RESTART IDENTITY CASCADE;
             """).ConfigureAwait(false);
     }
 
-    /// <summary>Register a user and return an authenticated HTTP client.</summary>
-    public Task<(HttpClient Client, AuthTokenResponse Tokens)> CreateAuthenticatedClientAsync(
+    /// <summary>
+    /// Returns a fresh client that carries its own anonymous-session cookie across calls. The
+    /// first request stamps a <c>trips_session</c> cookie and every subsequent call on the same
+    /// client reuses it — that's our test stand-in for "a single browser making N requests".
+    /// The tuple's second element is the resolved session GUID (parsed from Set-Cookie on a
+    /// no-op request); callers that pattern-match on the old <c>(client, tokens)</c> shape can
+    /// still ignore it.
+    /// </summary>
+    public Task<(HttpClient Client, SessionHandle Session)> CreateAuthenticatedClientAsync(
         string email = "alice@example.com",
         string password = "password123",
         string displayName = "Alice")
-        => RegisterAndAuthenticateAsync(CreateClient(), email, password, displayName);
+        => CreateSessionClientAsync();
 
     /// <summary>
     /// Returns a sibling factory that swaps the stubbed <see cref="ISolver"/> back to the real
@@ -129,18 +126,68 @@ public sealed class TripsApiFactory : WebApplicationFactory<Program>, IAsyncLife
         });
     }
 
-    internal static async Task<(HttpClient Client, AuthTokenResponse Tokens)> RegisterAndAuthenticateAsync(
-        HttpClient client,
-        string email,
-        string password,
-        string displayName)
+    /// <summary>
+    /// Build a client with a CookieContainer so the anonymous-session cookie persists across calls,
+    /// then prime it with a single GET /healthz so the Set-Cookie lands. Returns the parsed GUID.
+    /// </summary>
+    private async Task<(HttpClient Client, SessionHandle Session)> CreateSessionClientAsync()
     {
-        var register = new RegisterRequest(email, password, displayName);
-        var response = await client.PostAsJsonAsync("/auth/register", register).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var tokens = await response.Content.ReadFromJsonAsync<AuthTokenResponse>().ConfigureAwait(false);
-        ArgumentNullException.ThrowIfNull(tokens);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        return (client, tokens);
+        var handler = new CookieContainerHandler();
+        var client = CreateDefaultClient(handler);
+
+        // Prime the cookie. /healthz is anonymous and cheap; the response carries the Set-Cookie
+        // that we then forward on every subsequent request.
+        var primer = await client.GetAsync("/healthz").ConfigureAwait(false);
+        primer.EnsureSuccessStatusCode();
+
+        var sessionId = handler.ExtractSessionId();
+        return (client, new SessionHandle(sessionId));
+    }
+
+    /// <summary>Wraps the anonymous-session GUID assigned by the API.</summary>
+    public sealed record SessionHandle(Guid SessionId);
+
+    /// <summary>
+    /// DelegatingHandler that holds onto the test client's cookie jar so the
+    /// anonymous-session cookie sticks across requests. <see cref="WebApplicationFactory{T}"/>'s
+    /// own client doesn't enable a CookieContainer by default.
+    /// </summary>
+    private sealed class CookieContainerHandler : DelegatingHandler
+    {
+        private readonly CookieContainer _jar = new();
+
+        public Guid ExtractSessionId()
+        {
+            foreach (Cookie cookie in _jar.GetAllCookies())
+            {
+                if (cookie.Name == "trips_session" && Guid.TryParseExact(cookie.Value, "N", out var g))
+                {
+                    return g;
+                }
+            }
+            return Guid.Empty;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var requestUri = request.RequestUri ?? new Uri("http://localhost");
+            var cookieHeader = _jar.GetCookieHeader(requestUri);
+            if (!string.IsNullOrEmpty(cookieHeader))
+            {
+                request.Headers.Add("Cookie", cookieHeader);
+            }
+
+            var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.Headers.TryGetValues("Set-Cookie", out var setCookies))
+            {
+                foreach (var header in setCookies)
+                {
+                    _jar.SetCookies(requestUri, header);
+                }
+            }
+
+            return response;
+        }
     }
 }

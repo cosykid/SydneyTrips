@@ -116,9 +116,11 @@ public sealed class WhatIfServiceTests
     {
         var driverId = Guid.NewGuid();
         var driver = new SolverDriver(driverId, OriginNodeIndex: 0, Seats: 10);
+        // Distinct, non-degenerate points so SolutionBuilder stamps a real Stop.Location.
+        static Point Pt(int i) => new(151.0 + i * 0.01, -33.8 - i * 0.01) { SRID = 4326 };
         var nodes = new List<SolverNode>
         {
-            new(0, NodeKind.Home, CandidateNodeId: null),
+            new(0, NodeKind.Home, CandidateNodeId: null, Location: Pt(0)),
         };
         var passengers = new List<SolverPassenger>();
         var candidateIds = new List<Guid>();
@@ -126,13 +128,13 @@ public sealed class WhatIfServiceTests
         {
             var candId = Guid.NewGuid();
             candidateIds.Add(candId);
-            nodes.Add(new SolverNode(i + 1, NodeKind.Home, CandidateNodeId: candId));
+            nodes.Add(new SolverNode(i + 1, NodeKind.Home, CandidateNodeId: candId, Location: Pt(i + 1)));
             passengers.Add(new SolverPassenger(Guid.NewGuid(),
                 CandidateNodeIndices: new[] { i + 1 },
                 WalkPtMinsByNodeIndex: new[] { 0 }));
         }
         var destIndex = nodes.Count;
-        nodes.Add(new SolverNode(destIndex, NodeKind.TrainStation, CandidateNodeId: null));
+        nodes.Add(new SolverNode(destIndex, NodeKind.TrainStation, CandidateNodeId: null, Location: Pt(destIndex)));
 
         var n = nodes.Count;
         var matrix = new double[n, n];

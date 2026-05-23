@@ -1,5 +1,7 @@
+using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Trips.Api.Endpoints;
 using Trips.Core.Contracts;
 using Trips.Core.Domain;
@@ -32,9 +34,10 @@ public sealed class RealSolverOptimisationTests : IAsyncLifetime
     public async Task Optimise_with_real_OrToolsSolver_completes_and_persists_solution()
     {
         using var realFactory = _factory.WithRealSolver();
-        var client = realFactory.CreateClient();
-        var (authed, _) = await TripsApiFactory.RegisterAndAuthenticateAsync(
-            client, "real-solver@example.com", "password123", "Real Solver");
+        // Build a cookie-jar client against the real-solver factory. We re-use the static
+        // primer logic so the anonymous session cookie sticks across the trip create + optimise
+        // chain.
+        var authed = await PrimeSessionClientAsync(realFactory);
 
         var trip = await CreateTripAsync(authed);
         await AddParticipantsAsync(authed, trip.Id);
@@ -69,6 +72,41 @@ public sealed class RealSolverOptimisationTests : IAsyncLifetime
         payload.Solution.Should().NotBeNull();
         payload.Solution!.Routes.Should().NotBeEmpty();
         payload.Run.BestSolutionId.Should().Be(payload.Solution.Id);
+    }
+
+    /// <summary>Build a cookie-jar HttpClient against the supplied factory and prime the
+    /// anonymous-session cookie with a no-op GET so it sticks across subsequent calls.</summary>
+    private static async Task<HttpClient> PrimeSessionClientAsync(WebApplicationFactory<Program> factory)
+    {
+        var handler = new SessionCookieHandler();
+        var client = factory.CreateDefaultClient(handler);
+        var primer = await client.GetAsync("/healthz");
+        primer.EnsureSuccessStatusCode();
+        return client;
+    }
+
+    private sealed class SessionCookieHandler : DelegatingHandler
+    {
+        private readonly CookieContainer _jar = new();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri ?? new Uri("http://localhost");
+            var header = _jar.GetCookieHeader(uri);
+            if (!string.IsNullOrEmpty(header))
+            {
+                request.Headers.Add("Cookie", header);
+            }
+            var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.Headers.TryGetValues("Set-Cookie", out var setCookies))
+            {
+                foreach (var sc in setCookies)
+                {
+                    _jar.SetCookies(uri, sc);
+                }
+            }
+            return response;
+        }
     }
 
     private static async Task<TripDto> CreateTripAsync(HttpClient client)

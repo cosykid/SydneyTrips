@@ -4,41 +4,26 @@ using Trips.Realtime.Hubs;
 namespace Trips.Api.Auth;
 
 /// <summary>
-/// Centralised check for "is the calling user allowed to act on this trip?". Used by every
-/// trip-scoped endpoint. A user can act on a trip if they are the owner OR a participant.
+/// Trip lookup for endpoints + the realtime hub. With anonymous-session auth there is no
+/// per-user gate on reads or writes — anyone with the trip id (e.g. a passenger following a
+/// share link) can act on it. The only thing the cookie GUID controls is "is this trip in my
+/// list" and "can I delete it" (owner-only).
 /// </summary>
 public sealed class TripAuthorizationService : ITripHubAuthorizer
 {
     private readonly ITripRepository _trips;
-    private readonly IParticipantRepository _participants;
 
-    public TripAuthorizationService(ITripRepository trips, IParticipantRepository participants)
+    public TripAuthorizationService(ITripRepository trips)
     {
         ArgumentNullException.ThrowIfNull(trips);
-        ArgumentNullException.ThrowIfNull(participants);
         _trips = trips;
-        _participants = participants;
     }
 
-    /// <summary>Returns the trip when the caller is authorised, otherwise null.</summary>
-    public async Task<Core.Domain.Trip?> AuthorizeAsync(Guid tripId, Guid userId, CancellationToken ct)
-    {
-        if (userId == Guid.Empty)
-        {
-            return null;
-        }
+    /// <summary>Returns the trip if it exists, otherwise null. No ownership check.</summary>
+    public async Task<Core.Domain.Trip?> LookupAsync(Guid tripId, CancellationToken ct) =>
+        await _trips.GetByIdAsync(tripId, ct).ConfigureAwait(false);
 
-        var trip = await _trips.GetByIdAsync(tripId, ct).ConfigureAwait(false);
-        if (trip is null)
-        {
-            return null;
-        }
-        if (trip.OwnerId == userId)
-        {
-            return trip;
-        }
-
-        var participants = await _participants.ListForTripAsync(tripId, ct).ConfigureAwait(false);
-        return participants.Any(p => p.UserId == userId) ? trip : null;
-    }
+    /// <inheritdoc cref="ITripHubAuthorizer.LookupAsync"/>
+    Task<Core.Domain.Trip?> ITripHubAuthorizer.LookupAsync(Guid tripId, CancellationToken ct) =>
+        LookupAsync(tripId, ct);
 }

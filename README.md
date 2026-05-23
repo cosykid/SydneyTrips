@@ -250,14 +250,16 @@ To stop everything: `docker compose -f infra/docker-compose.yml down`.
 The API runs without TfNSW or Google keys — it uses stub clients for both, with reasonable synthetic responses suitable for local dev. To wire in real keys:
 
 ```bash
-dotnet user-secrets set "TfNsw:ApiKey" "<your-key>"   --project src/Trips.Api
-dotnet user-secrets set "Google:ApiKey" "<your-key>"  --project src/Trips.Api
+dotnet user-secrets set "Integrations:TfNsw:ApiKey" "<your-key>"   --project src/Trips.Api
+dotnet user-secrets set "Integrations:Google:ApiKey" "<your-key>"  --project src/Trips.Api
 ```
+
+Equivalent env-var form (double-underscore separates config sections): `Integrations__TfNsw__ApiKey` / `Integrations__Google__ApiKey`. ASP.NET reads env vars natively, so exporting them in your shell (or via `direnv`) works without code changes — but it does not read `.env` files by default.
 
 | Key | Notes |
 | --- | --- |
-| `TfNsw:ApiKey`  | Register at <https://opendata.transport.nsw.gov.au>, subscribe to Trip Planner v2, Coordinate Request, Departure, GTFS-Realtime. |
-| `Google:ApiKey` | Routes API + Geocoding API enabled; set billing alerts (matrix calls add up). |
+| `Integrations:TfNsw:ApiKey`  | Register at <https://opendata.transport.nsw.gov.au>, subscribe to Trip Planner v2, Coordinate Request, Departure, GTFS-Realtime. |
+| `Integrations:Google:ApiKey` | Routes API + Geocoding API enabled; set billing alerts (matrix calls add up). |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Public Mapbox token in `web/.env.local`. The map components fall back to a placeholder card if unset, so this is also optional for getting the app running. |
 
 ### Demo seed + screenshots

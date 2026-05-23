@@ -24,7 +24,7 @@ public static class AdvancedEndpoints
     public static IEndpointRouteBuilder MapAdvanced(this IEndpointRouteBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        var group = app.MapGroup("/trips/{tripId:guid}").WithTags("Advanced").RequireAuthorization();
+        var group = app.MapGroup("/trips/{tripId:guid}").WithTags("Advanced");
 
         group.MapPost("/lock-solution", LockSolutionAsync)
             .AddEndpointFilter<ValidationFilter<LockSolutionRequest>>()
@@ -41,8 +41,8 @@ public static class AdvancedEndpoints
         // client can pick the one that's convenient.
         group.MapGet("/cost-split", (Guid tripId, TripAuthorizationService authz, ITripRepository trips,
             IParticipantRepository participants, ISolutionRepository solutions, ICostSplitService cost,
-            IConfiguration cfg, CurrentUser currentUser, HttpContext http, CancellationToken ct) =>
-                CostSplitAsync(tripId, request: null, authz, trips, participants, solutions, cost, cfg, currentUser, http, ct))
+            IConfiguration cfg, HttpContext http, CancellationToken ct) =>
+                CostSplitAsync(tripId, request: null, authz, trips, participants, solutions, cost, cfg, http, ct))
             .WithName("CostSplit");
         group.MapPost("/cost-split", CostSplitAsync).WithName("CostSplitWithInputs");
 
@@ -58,12 +58,12 @@ public static class AdvancedEndpoints
         ITripRepository trips,
         IOptimisationRunRepository runs,
         ITripEventRepository events,
-        CurrentUser currentUser,
+        CurrentSession session,
         IClock clock,
         HttpContext http,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -91,13 +91,13 @@ public static class AdvancedEndpoints
             id: Guid.NewGuid(),
             tripId: tripId,
             kind: EventKind.SolutionLocked,
-            actorId: currentUser.UserIdGuid,
+            actorId: session.SessionId,
             location: null,
             timestamp: clock.UtcNow), ct).ConfigureAwait(false);
         await trips.SaveChangesAsync(ct).ConfigureAwait(false);
 
         // Re-fetch with participants loaded so ParticipantCount in the response is accurate
-        // (authz returned the bare entity).
+        // (Lookup returned the bare entity).
         var reloaded = await trips.GetWithParticipantsAsync(tripId, ct).ConfigureAwait(false) ?? trip;
         return TypedResults.Ok(reloaded.ToDto());
     }
@@ -106,10 +106,9 @@ public static class AdvancedEndpoints
         Guid tripId,
         TripAuthorizationService authz,
         ISolutionRepository solutions,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null || trip.LockedSolutionId is null)
         {
             return TypedResults.NotFound();
@@ -129,12 +128,11 @@ public static class AdvancedEndpoints
         ITripRepository trips,
         IOptimisationRunRepository runs,
         IOptimisationJobQueue queue,
-        CurrentUser currentUser,
         IClock clock,
         HttpContext http,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -178,11 +176,10 @@ public static class AdvancedEndpoints
         ISolutionRepository solutions,
         ICostSplitService cost,
         IConfiguration cfg,
-        CurrentUser currentUser,
         HttpContext http,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
@@ -246,10 +243,9 @@ public static class AdvancedEndpoints
         ReturnLegRequest? request,
         TripAuthorizationService authz,
         IReturnTripPlanner planner,
-        CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
         if (trip is null)
         {
             return TypedResults.NotFound();
