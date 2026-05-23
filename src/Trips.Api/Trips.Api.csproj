@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Trips.Api.Tests" />
+    <InternalsVisibleTo Include="Trips.Realtime.Tests" />
   </ItemGroup>
 
   <ItemGroup>
