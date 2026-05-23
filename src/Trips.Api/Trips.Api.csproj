@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Trips.Core\Trips.Core.csproj" />
+    <ProjectReference Include="..\Trips.Data\Trips.Data.csproj" />
+    <ProjectReference Include="..\Trips.Optimisation\Trips.Optimisation.csproj" />
+    <ProjectReference Include="..\Trips.Integrations\Trips.Integrations.csproj" />
+    <ProjectReference Include="..\Trips.Realtime\Trips.Realtime.csproj" />
+  </ItemGroup>
+
+</Project>
