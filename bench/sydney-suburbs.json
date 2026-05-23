@@ -1,0 +1,42 @@
+{
+  "$comment": "Curated Sydney-area centroids for synthetic instance generation. Lat/lng are WGS84 (EPSG:4326).",
+  "origins": [
+    { "name": "Newtown", "lat": -33.8975, "lng": 151.1789 },
+    { "name": "Surry Hills", "lat": -33.8870, "lng": 151.2107 },
+    { "name": "Glebe", "lat": -33.8810, "lng": 151.1880 },
+    { "name": "Marrickville", "lat": -33.9095, "lng": 151.1565 },
+    { "name": "Bondi Junction", "lat": -33.8929, "lng": 151.2509 },
+    { "name": "Randwick", "lat": -33.9156, "lng": 151.2419 },
+    { "name": "Manly", "lat": -33.7969, "lng": 151.2855 },
+    { "name": "Mosman", "lat": -33.8281, "lng": 151.2387 },
+    { "name": "North Sydney", "lat": -33.8389, "lng": 151.2074 },
+    { "name": "Chatswood", "lat": -33.7969, "lng": 151.1820 },
+    { "name": "Hornsby", "lat": -33.7034, "lng": 151.0986 },
+    { "name": "Parramatta", "lat": -33.8150, "lng": 151.0011 },
+    { "name": "Strathfield", "lat": -33.8714, "lng": 151.0939 },
+    { "name": "Burwood", "lat": -33.8782, "lng": 151.1041 },
+    { "name": "Ashfield", "lat": -33.8884, "lng": 151.1248 },
+    { "name": "Hurstville", "lat": -33.9670, "lng": 151.1024 },
+    { "name": "Kogarah", "lat": -33.9836, "lng": 151.1320 },
+    { "name": "Bankstown", "lat": -33.9180, "lng": 151.0345 },
+    { "name": "Liverpool", "lat": -33.9210, "lng": 150.9239 },
+    { "name": "Penrith", "lat": -33.7510, "lng": 150.6940 },
+    { "name": "Blacktown", "lat": -33.7711, "lng": 150.9067 },
+    { "name": "Castle Hill", "lat": -33.7322, "lng": 151.0050 },
+    { "name": "Ryde", "lat": -33.8147, "lng": 151.1058 },
+    { "name": "Epping", "lat": -33.7727, "lng": 151.0814 },
+    { "name": "Eastwood", "lat": -33.7912, "lng": 151.0810 },
+    { "name": "Maroubra", "lat": -33.9430, "lng": 151.2371 },
+    { "name": "Coogee", "lat": -33.9213, "lng": 151.2540 },
+    { "name": "Dee Why", "lat": -33.7515, "lng": 151.2870 },
+    { "name": "Cremorne", "lat": -33.8278, "lng": 151.2266 },
+    { "name": "Lane Cove", "lat": -33.8136, "lng": 151.1707 }
+  ],
+  "destinations": [
+    { "name": "Palm Beach", "lat": -33.5970, "lng": 151.3220 },
+    { "name": "Cronulla Beach", "lat": -34.0556, "lng": 151.1542 },
+    { "name": "Bondi Beach", "lat": -33.8915, "lng": 151.2767 },
+    { "name": "Wattamolla (Royal NP)", "lat": -34.1370, "lng": 151.1147 },
+    { "name": "Audley (Royal NP entrance)", "lat": -34.0791, "lng": 151.0606 }
+  ]
+}
