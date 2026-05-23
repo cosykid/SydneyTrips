@@ -186,10 +186,9 @@ public sealed class OrToolsSolver : ISolver
             }
         }
 
-        // (4)/(7) capacity per driver: Σ assign ≤ seats. Same constraint, restated for clarity.
-        // We compute the per-driver load sums up front so subsequent constraints (hasLoad,
-        // routing-on-demand) can reuse them.
-        var driverLoadSums = new LinearExprBuilder[input.Drivers.Count];
+        // (4)/(7) capacity per driver: Σ assign ≤ seats. We also build the per-driver "hasLoad"
+        // boolean — 1 iff the driver carries ≥ 1 passenger — which gates routing on demand and the
+        // spread/fairness contributions (idle drivers don't count).
         var hasLoadVars = new BoolVar[input.Drivers.Count];
         for (var d = 0; d < input.Drivers.Count; d++)
         {
@@ -202,9 +201,8 @@ public sealed class OrToolsSolver : ISolver
                 }
             }
             model.Add(sum <= input.Drivers[d].Seats);
-            driverLoadSums[d] = sum;
 
-            // hasLoadVar is 1 iff driver d carries ≥ 1 passenger. Two-way reified.
+            // hasLoad is 1 iff driver d carries ≥ 1 passenger. Two-way reified.
             var hasLoad = model.NewBoolVar($"has_load_d{d}");
             model.Add(sum >= 1).OnlyEnforceIf(hasLoad);
             model.Add(sum == 0).OnlyEnforceIf(hasLoad.Not());
