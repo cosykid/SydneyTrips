@@ -24,6 +24,14 @@ namespace Trips.Realtime.Tests;
 /// </summary>
 public sealed class RealtimeApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    static RealtimeApiFactory()
+    {
+        // AddTripsRealtime calls AddStackExchangeRedis(connectionString) at Program.cs registration
+        // time, before the factory's ConfigureAppConfiguration override can clear it. Env vars beat
+        // appsettings.json in the default chain, so this forces SignalR onto its in-memory backplane.
+        Environment.SetEnvironmentVariable("ConnectionStrings__Redis", string.Empty);
+    }
+
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder()
         .WithImage("postgis/postgis:16-3.4")
         .WithDatabase("trips")

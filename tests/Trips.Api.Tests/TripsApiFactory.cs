@@ -24,6 +24,15 @@ namespace Trips.Api.Tests;
 /// </summary>
 public sealed class TripsApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    static TripsApiFactory()
+    {
+        // SignalR's AddStackExchangeRedis() runs in Program.cs *before* the factory's
+        // ConfigureAppConfiguration override applies, so it eagerly captures appsettings.json's
+        // "localhost:6379" and tries to connect during hub use. Env vars beat JSON in the default
+        // config chain, so clearing it here forces the realtime layer onto the in-memory backplane.
+        Environment.SetEnvironmentVariable("ConnectionStrings__Redis", string.Empty);
+    }
+
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder()
         .WithImage("postgis/postgis:16-3.4")
         .WithDatabase("trips")

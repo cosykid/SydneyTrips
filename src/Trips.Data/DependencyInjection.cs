@@ -21,12 +21,15 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var connectionString = configuration.GetConnectionString("Trips")
-            ?? throw new InvalidOperationException("ConnectionStrings:Trips is not configured.");
-
-        services.AddDbContext<TripsDbContext>(options =>
+        // Resolve the connection string from the runtime IConfiguration so test hosts that override
+        // ConnectionStrings:Trips via ConfigureAppConfiguration (which runs at Build() time, after
+        // this DI registration line in Program.cs) actually take effect. Capturing it eagerly here
+        // would lock in whatever appsettings.json carried.
+        services.AddDbContext<TripsDbContext>((sp, options) =>
         {
-            options.UseNpgsql(connectionString, npgsql =>
+            var cs = sp.GetRequiredService<IConfiguration>().GetConnectionString("Trips")
+                ?? throw new InvalidOperationException("ConnectionStrings:Trips is not configured.");
+            options.UseNpgsql(cs, npgsql =>
             {
                 npgsql.UseNetTopologySuite();
                 npgsql.MigrationsAssembly(typeof(TripsDbContext).Assembly.GetName().Name);
