@@ -213,9 +213,16 @@ public sealed class ReportWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine("graph LR");
+        var idleNotes = new List<int>();
         for (var d = 0; d < solution.Routes.Count; d++)
         {
             var route = solution.Routes[d];
+            if (route.Stops.Count == 0)
+            {
+                // Idle driver — stays home, no edges. Show a note so the reader knows.
+                idleNotes.Add(d);
+                continue;
+            }
             var prev = $"{prefix}_d{d}_origin([\"D{d} start\"])";
             sb.AppendLine($"  {prev}");
             for (var i = 0; i < route.Stops.Count; i++)
@@ -225,6 +232,10 @@ public sealed class ReportWriter
                 prev = node;
             }
             sb.AppendLine($"  {prev} --> {prefix}_d{d}_dest{{{{\"{meta.DestinationName}\"}}}}");
+        }
+        if (idleNotes.Count > 0)
+        {
+            sb.AppendLine($"  idle_{prefix}[\"Idle drivers: {string.Join(", ", idleNotes.Select(d => $"D{d}"))}\"]");
         }
         return sb.ToString();
     }
