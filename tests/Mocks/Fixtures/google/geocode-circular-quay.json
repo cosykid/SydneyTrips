@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "formattedAddress": "Circular Quay, Sydney NSW 2000, Australia",
+      "geometry": {
+        "location": { "lat": -33.8615, "lng": 151.2106 },
+        "locationType": "ROOFTOP"
+      },
+      "place_id": "ChIJ7eyTOqyuEmsRomLjzPePo08"
+    }
+  ],
+  "status": "OK"
+}

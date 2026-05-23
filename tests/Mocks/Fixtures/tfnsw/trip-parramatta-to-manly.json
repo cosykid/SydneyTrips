@@ -1,0 +1,86 @@
+{
+  "version": "10.2.1.42",
+  "systemMessages": [],
+  "journeys": [
+    {
+      "rating": 0,
+      "isAdditional": false,
+      "interchanges": 2,
+      "legs": [
+        {
+          "duration": 1980,
+          "origin": {
+            "id": "275010",
+            "name": "Parramatta Station",
+            "type": "stop",
+            "coord": [151.0021, -33.8175]
+          },
+          "destination": {
+            "id": "200060",
+            "name": "Wynyard Station",
+            "type": "stop",
+            "coord": [151.2058, -33.8657]
+          },
+          "transportation": {
+            "id": "T1",
+            "name": "North Shore & Western Line",
+            "disassembledName": "T1",
+            "number": "T1",
+            "product": {
+              "name": "Train",
+              "class": 1
+            }
+          }
+        },
+        {
+          "duration": 600,
+          "origin": {
+            "id": "200060",
+            "name": "Wynyard Station",
+            "type": "stop",
+            "coord": [151.2058, -33.8657]
+          },
+          "destination": {
+            "id": "200070",
+            "name": "Circular Quay Wharf 3",
+            "type": "stop",
+            "coord": [151.2114, -33.8615]
+          },
+          "transportation": {
+            "id": "walk",
+            "name": "Walk",
+            "product": {
+              "name": "Walk",
+              "class": 100
+            }
+          }
+        },
+        {
+          "duration": 1800,
+          "origin": {
+            "id": "200070",
+            "name": "Circular Quay Wharf 3",
+            "type": "stop",
+            "coord": [151.2114, -33.8615]
+          },
+          "destination": {
+            "id": "210010",
+            "name": "Manly Wharf",
+            "type": "stop",
+            "coord": [151.2861, -33.8002]
+          },
+          "transportation": {
+            "id": "F1",
+            "name": "Manly Ferry",
+            "disassembledName": "F1",
+            "number": "F1",
+            "product": {
+              "name": "Ferry",
+              "class": 9
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

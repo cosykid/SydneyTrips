@@ -1,0 +1,29 @@
+{
+  "version": "10.2.1.42",
+  "locations": [
+    {
+      "id": "275010",
+      "name": "Parramatta Station",
+      "type": "stop",
+      "coord": [151.0021, -33.8175],
+      "distance": 25,
+      "productClasses": [1]
+    },
+    {
+      "id": "275011",
+      "name": "Parramatta Wharf",
+      "type": "stop",
+      "coord": [151.0023, -33.8146],
+      "distance": 380,
+      "productClasses": [9]
+    },
+    {
+      "id": "275012",
+      "name": "Parramatta Westfield Bus Interchange",
+      "type": "stop",
+      "coord": [151.0036, -33.8186],
+      "distance": 220,
+      "productClasses": [5]
+    }
+  ]
+}

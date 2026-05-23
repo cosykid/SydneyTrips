@@ -1,0 +1,106 @@
+{
+  "version": "10.2.1.42",
+  "systemMessages": [],
+  "journeys": [
+    {
+      "rating": 0,
+      "isAdditional": false,
+      "interchanges": 1,
+      "legs": [
+        {
+          "duration": 480,
+          "origin": {
+            "id": "200060",
+            "name": "Town Hall Station",
+            "type": "stop",
+            "coord": [151.2073, -33.8730],
+            "departureTimePlanned": "2025-01-15T08:00:00Z",
+            "departureTimeEstimated": "2025-01-15T08:00:00Z"
+          },
+          "destination": {
+            "id": "200030",
+            "name": "Bondi Junction Station",
+            "type": "stop",
+            "coord": [151.2509, -33.8919],
+            "arrivalTimePlanned": "2025-01-15T08:08:00Z",
+            "arrivalTimeEstimated": "2025-01-15T08:08:00Z"
+          },
+          "transportation": {
+            "id": "T4",
+            "name": "Eastern Suburbs & Illawarra Line",
+            "disassembledName": "T4",
+            "number": "T4",
+            "description": "Town Hall to Bondi Junction",
+            "product": {
+              "name": "Train",
+              "class": 1,
+              "iconId": 1
+            },
+            "properties": {
+              "realtimeTripId": "T4-873-2025-01-15"
+            }
+          }
+        },
+        {
+          "duration": 720,
+          "origin": {
+            "id": "200030",
+            "name": "Bondi Junction Station",
+            "type": "stop",
+            "coord": [151.2509, -33.8919],
+            "departureTimePlanned": "2025-01-15T08:12:00Z",
+            "departureTimeEstimated": "2025-01-15T08:12:00Z"
+          },
+          "destination": {
+            "id": "204030",
+            "name": "Bondi Beach",
+            "type": "stop",
+            "coord": [151.2767, -33.8915],
+            "arrivalTimePlanned": "2025-01-15T08:24:00Z",
+            "arrivalTimeEstimated": "2025-01-15T08:24:00Z"
+          },
+          "transportation": {
+            "id": "333",
+            "name": "Bondi Junction to Watsons Bay",
+            "disassembledName": "333",
+            "number": "333",
+            "description": "Bondi route",
+            "product": {
+              "name": "Bus",
+              "class": 5,
+              "iconId": 5
+            },
+            "properties": {
+              "realtimeTripId": "B333-2025-01-15"
+            }
+          }
+        },
+        {
+          "duration": 240,
+          "origin": {
+            "id": "204030",
+            "name": "Bondi Beach",
+            "type": "stop",
+            "coord": [151.2767, -33.8915]
+          },
+          "destination": {
+            "id": "destination",
+            "name": "Bondi Beach Pavilion",
+            "type": "poi",
+            "coord": [151.2796, -33.8908]
+          },
+          "transportation": {
+            "id": "walk",
+            "name": "Walk",
+            "disassembledName": "walk",
+            "product": {
+              "name": "Walk",
+              "class": 100,
+              "iconId": 100
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

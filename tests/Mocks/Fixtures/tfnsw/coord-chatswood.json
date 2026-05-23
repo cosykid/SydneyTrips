@@ -1,0 +1,29 @@
+{
+  "version": "10.2.1.42",
+  "locations": [
+    {
+      "id": "204020",
+      "name": "Chatswood Station",
+      "type": "stop",
+      "coord": [151.1832, -33.7969],
+      "distance": 15,
+      "productClasses": [1, 2]
+    },
+    {
+      "id": "204021",
+      "name": "Chatswood Interchange",
+      "type": "stop",
+      "coord": [151.1830, -33.7975],
+      "distance": 75,
+      "productClasses": [5]
+    },
+    {
+      "id": "204022",
+      "name": "Chatswood Westfield Bus Stop A",
+      "type": "stop",
+      "coord": [151.1818, -33.7964],
+      "distance": 190,
+      "productClasses": [5]
+    }
+  ]
+}
