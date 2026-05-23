@@ -50,10 +50,25 @@ public sealed class AdvancedEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task WhatIf_enqueues_a_run()
+    public async Task WhatIf_without_locked_solution_returns_409()
+    {
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("whatif0@example.com");
+        var trip = await CreateTripWithParticipantsAsync(client);
+
+        var what = new WhatIfRequest(
+            DropParticipantIds: null,
+            AddParticipants: null,
+            NewWeights: new ObjectiveWeightsDto(0.5, 0.2, 1.0, 0.3, 0.3));
+        var response = await client.PostAsJsonAsync($"/trips/{trip.Id}/whatif", what);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task WhatIf_after_lock_enqueues_a_run()
     {
         var (client, _) = await _factory.CreateAuthenticatedClientAsync("whatif1@example.com");
         var trip = await CreateTripWithParticipantsAsync(client);
+        await OptimiseAndLockAsync(client, trip.Id);
 
         var what = new WhatIfRequest(
             DropParticipantIds: null,
@@ -64,28 +79,77 @@ public sealed class AdvancedEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CostSplit_returns_placeholder_breakdown()
+    public async Task CostSplit_without_locked_solution_returns_409()
     {
-        var (client, _) = await _factory.CreateAuthenticatedClientAsync("cost1@example.com");
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("cost0@example.com");
         var trip = await CreateTripWithParticipantsAsync(client);
 
-        var response = await client.GetFromJsonAsync<CostSplitResponse>($"/trips/{trip.Id}/cost-split");
-        response.Should().NotBeNull();
-        response!.Entries.Should().NotBeEmpty();
-        response.TotalCost.Should().Be(0.0);
-        response.Todo.Should().NotBeNullOrWhiteSpace();
+        var response = await client.GetAsync($"/trips/{trip.Id}/cost-split");
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact]
-    public async Task ReturnLeg_returns_accepted_with_run_id()
+    public async Task CostSplit_after_lock_returns_itemised_breakdown()
+    {
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("cost1@example.com");
+        var trip = await CreateTripWithParticipantsAsync(client);
+        await OptimiseAndLockAsync(client, trip.Id);
+
+        var response = await client.GetFromJsonAsync<CostSplitResponse>($"/trips/{trip.Id}/cost-split");
+        response.Should().NotBeNull();
+        response!.SolutionId.Should().NotBeNull();
+        response.FuelPricePerLitre.Should().BeGreaterThan(0);
+        response.FuelEconomyLPer100Km.Should().BeGreaterThan(0);
+        // The stub solver pickups everyone at a single Sydney CBD point — total cost may be small
+        // (haversine driver→stop only) but the contract must be populated.
+        response.Entries.Should().NotBeNull();
+        response.TotalCost.Should().Be(response.TotalFuel + response.TotalTolls);
+    }
+
+    [Fact]
+    public async Task CostSplit_accepts_override_inputs()
+    {
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("cost2@example.com");
+        var trip = await CreateTripWithParticipantsAsync(client);
+        await OptimiseAndLockAsync(client, trip.Id);
+
+        var inputs = new CostSplitInputsDto(
+            FuelPricePerLitre: 1.99,
+            FuelEconomyLPer100Km: 7.5,
+            Tolls: Array.Empty<TollSegmentDto>());
+        var response = await client.PostAsJsonAsync($"/trips/{trip.Id}/cost-split", inputs);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<CostSplitResponse>();
+        payload!.FuelPricePerLitre.Should().Be(1.99);
+        payload.FuelEconomyLPer100Km.Should().Be(7.5);
+    }
+
+    [Fact]
+    public async Task ReturnLeg_with_requests_returns_solutions()
     {
         var (client, _) = await _factory.CreateAuthenticatedClientAsync("ret1@example.com");
         var trip = await CreateTripWithParticipantsAsync(client);
 
-        var response = await client.PostAsync($"/trips/{trip.Id}/return-leg", content: null);
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var enq = await response.Content.ReadFromJsonAsync<EnqueueRunResponse>();
-        enq!.RunId.Should().NotBe(Guid.Empty);
+        var body = new ReturnLegRequest(new[]
+        {
+            new ReturnRequestDto(Guid.NewGuid(), DateTime.UtcNow.AddHours(8), 151.21, -33.87),
+            new ReturnRequestDto(Guid.NewGuid(), DateTime.UtcNow.AddHours(8).AddMinutes(5), 151.22, -33.88),
+        });
+        var response = await client.PostAsJsonAsync($"/trips/{trip.Id}/return-leg", body);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dto = await response.Content.ReadFromJsonAsync<ReturnLegResponse>();
+        dto!.Solutions.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task ReturnLeg_with_empty_request_returns_400()
+    {
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("ret2@example.com");
+        var trip = await CreateTripWithParticipantsAsync(client);
+
+        var body = new ReturnLegRequest(Array.Empty<ReturnRequestDto>());
+        var response = await client.PostAsJsonAsync($"/trips/{trip.Id}/return-leg", body);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     private static async Task<TripDto> CreateTripWithParticipantsAsync(HttpClient client)
@@ -118,5 +182,15 @@ public sealed class AdvancedEndpointsTests : IAsyncLifetime
             Seats: 0,
             Preferences: null));
         return tripDto;
+    }
+
+    private static async Task OptimiseAndLockAsync(HttpClient client, Guid tripId)
+    {
+        var post = await client.PostAsJsonAsync($"/trips/{tripId}/optimise", new OptimiseRequest(new ObjectiveWeightsDto(1, 0.5, 0.5, 0.3, 0.3)));
+        var enq = await post.Content.ReadFromJsonAsync<EnqueueRunResponse>();
+        await OptimisationEndpointsTests.PollUntilCompletedAsync(client, tripId, enq!.RunId);
+        var lockResp = await client.PostAsJsonAsync($"/trips/{tripId}/lock-solution",
+            new LockSolutionRequest(enq.RunId, ParetoIndex: 0));
+        lockResp.EnsureSuccessStatusCode();
     }
 }

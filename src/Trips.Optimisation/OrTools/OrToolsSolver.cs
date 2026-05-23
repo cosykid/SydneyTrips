@@ -366,6 +366,16 @@ public sealed class OrToolsSolver : ISolver
         totalObj.AddTerm(fairness, w4);
         model.Minimize(totalObj);
 
+        // --- Warm-start hint (what-if re-optimisation) -------------------------------------------
+        // When supplied, hint the CP-SAT search toward the locked plan. We pin assign[d,p,n]=1 for
+        // each passenger's prior pickup, visit[d,n]=1 for every prior stop, and arc[d,i,j]=1 along
+        // the prior driver sequence. CP-SAT treats hints as soft (initial solution to repair), so
+        // dropping/adding a passenger or changing weights can still shift the optimum.
+        if (input.WarmStartHint is { } hint)
+        {
+            ApplyWarmStartHint(model, hint, assign, visit, arc, input.Drivers.Count, input.Drivers, destIndex, pickupNodes);
+        }
+
         // --- Solve -------------------------------------------------------------------------------
 
         var solver = new CpSolver();
@@ -410,6 +420,73 @@ public sealed class OrToolsSolver : ISolver
         }
 
         return SolutionBuilder.Build(input, "OR-Tools", routesPerDriver, nodeChoice, driverChoice, destIndex, nodeLocations);
+    }
+
+    /// <summary>
+    /// Feed a <see cref="WarmStartHint"/> into the CP-SAT model via <c>AddHint</c>. Variables not
+    /// mentioned by the hint default to "unhinted" — the solver explores them freely. Indices that
+    /// reference variables we never created (e.g. a passenger's prior pickup node when the passenger
+    /// has been dropped, or a hint assignment whose passenger has been removed entirely) are skipped.
+    /// </summary>
+    private static void ApplyWarmStartHint(
+        CpModel model,
+        WarmStartHint hint,
+        BoolVar[,,] assign,
+        BoolVar[,] visit,
+        Dictionary<(int d, int i, int j), BoolVar> arc,
+        int driverCount,
+        IReadOnlyList<SolverDriver> drivers,
+        int destIndex,
+        IReadOnlyList<int> pickupNodes)
+    {
+        var pickupSet = new HashSet<int>(pickupNodes);
+        var hintedAssign = new HashSet<(int d, int p, int n)>();
+        var hintedVisit = new HashSet<(int d, int n)>();
+
+        foreach (var a in hint.Assignments)
+        {
+            if (a.DriverIndex < 0 || a.DriverIndex >= driverCount) continue;
+            if (a.PassengerIndex < 0 || a.PassengerIndex >= assign.GetLength(1)) continue;
+            if (a.NodeIndex < 0 || a.NodeIndex >= assign.GetLength(2)) continue;
+            var av = assign[a.DriverIndex, a.PassengerIndex, a.NodeIndex];
+            if (av is null) continue; // (p,n) pair wasn't created (walk-budget infeasible)
+            model.AddHint(av, 1);
+            hintedAssign.Add((a.DriverIndex, a.PassengerIndex, a.NodeIndex));
+            if (pickupSet.Contains(a.NodeIndex))
+            {
+                var vv = visit[a.DriverIndex, a.NodeIndex];
+                if (vv is not null && hintedVisit.Add((a.DriverIndex, a.NodeIndex)))
+                {
+                    model.AddHint(vv, 1);
+                }
+            }
+        }
+
+        for (var d = 0; d < hint.DriverSequences.Count && d < driverCount; d++)
+        {
+            var seq = hint.DriverSequences[d];
+            if (seq.Count == 0) continue;
+            var origin = drivers[d].OriginNodeIndex;
+            var prev = origin;
+            foreach (var n in seq)
+            {
+                if (arc.TryGetValue((d, prev, n), out var arcVar))
+                {
+                    model.AddHint(arcVar, 1);
+                }
+                if (pickupSet.Contains(n) && hintedVisit.Add((d, n)))
+                {
+                    var vv = visit[d, n];
+                    if (vv is not null) model.AddHint(vv, 1);
+                }
+                prev = n;
+            }
+            // Close the route back to destination.
+            if (arc.TryGetValue((d, prev, destIndex), out var arcToDest))
+            {
+                model.AddHint(arcToDest, 1);
+            }
+        }
     }
 
     private static IReadOnlyList<int> ExtractRoute(

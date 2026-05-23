@@ -13,18 +13,58 @@ public sealed record WhatIfRequest(
 public sealed record EnqueueRunResponse(Guid RunId);
 
 /// <summary>
-/// Cost-split breakdown for a locked solution. WS7 will fill in the math; until then we
-/// return zeros plus a <see cref="Todo"/> note so the contract is stable for WS6.
+/// Cost-split breakdown for a locked solution. Itemises fuel + tolls per participant; the totals
+/// at the top tier mirror what the driver paid, the per-entry shares sum to the same number.
 /// </summary>
+/// <param name="TripId">The owning trip.</param>
+/// <param name="SolutionId">The locked solution we split.</param>
+/// <param name="Entries">One entry per participating passenger.</param>
+/// <param name="TotalCost">Sum of <see cref="TotalFuel"/> + <see cref="TotalTolls"/>; same number that the driver actually spent.</param>
+/// <param name="TotalFuel">Total fuel cost for the trip.</param>
+/// <param name="TotalTolls">Total toll cost for the trip; 0 when no tolls were provided.</param>
+/// <param name="FuelPricePerLitre">Echo of the input fuel price (so the client can render units).</param>
+/// <param name="FuelEconomyLPer100Km">Echo of the input fuel economy.</param>
 public sealed record CostSplitResponse(
     Guid TripId,
     Guid? SolutionId,
     IReadOnlyList<CostSplitEntry> Entries,
     double TotalCost,
-    string? Todo);
+    double TotalFuel,
+    double TotalTolls,
+    double FuelPricePerLitre,
+    double FuelEconomyLPer100Km);
 
+/// <summary>One passenger's share of the trip cost.</summary>
+/// <param name="ParticipantId">Domain id of the passenger.</param>
+/// <param name="DisplayName">Passenger's display name for the UI.</param>
+/// <param name="FuelShare">Their share of the fuel cost.</param>
+/// <param name="TollShare">Their share of the tolls.</param>
+/// <param name="Total">Sum of <see cref="FuelShare"/> + <see cref="TollShare"/>.</param>
 public sealed record CostSplitEntry(
     Guid ParticipantId,
     string DisplayName,
-    double Share,
-    double Kilometres);
+    double FuelShare,
+    double TollShare,
+    double Total);
+
+/// <summary>Optional toll segment supplied via query/body to the cost-split endpoint.</summary>
+public sealed record TollSegmentDto(Guid FromStopId, Guid ToStopId, double Amount);
+
+/// <summary>Payload to POST /trips/{id}/return-leg.</summary>
+public sealed record ReturnLegRequest(IReadOnlyList<ReturnRequestDto> Requests);
+
+/// <summary>One return-trip request.</summary>
+public sealed record ReturnRequestDto(
+    Guid ParticipantId,
+    DateTime DesiredDeparture,
+    double DropoffLongitude,
+    double DropoffLatitude);
+
+/// <summary>Response from POST /trips/{id}/return-leg — one solution per departure cluster.</summary>
+public sealed record ReturnLegResponse(IReadOnlyList<SolutionDto> Solutions);
+
+/// <summary>Optional query/body for the cost-split endpoint.</summary>
+public sealed record CostSplitInputsDto(
+    double? FuelPricePerLitre,
+    double? FuelEconomyLPer100Km,
+    IReadOnlyList<TollSegmentDto>? Tolls);

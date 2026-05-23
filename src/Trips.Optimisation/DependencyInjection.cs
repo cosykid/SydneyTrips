@@ -1,9 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
 using Trips.Core.Abstractions;
 using Trips.Optimisation.Common;
+using Trips.Optimisation.Cost;
 using Trips.Optimisation.Heuristic;
 using Trips.Optimisation.OrTools;
 using Trips.Optimisation.Postprocess;
+using Trips.Optimisation.ReturnTrip;
+using Trips.Optimisation.WhatIf;
 
 namespace Trips.Optimisation;
 
@@ -24,6 +27,10 @@ public static class DependencyInjection
     ///     matrix-only times.</item>
     ///   <item><see cref="SolverOptions"/> bound to the default record; override via options.</item>
     ///   <item><see cref="SimulatedAnnealingSchedule"/> bound to the tuned default.</item>
+    ///   <item>WS7 advanced services: <see cref="ICostSplitService"/>, <see cref="IReturnTripPlanner"/>,
+    ///     <see cref="IWhatIfService"/>. Each requires a small repository adapter
+    ///     (<see cref="ISolutionRepository"/>, <see cref="ILockedContextRepository"/>) which the data
+    ///     layer wires up — the optimisation DI just declares the service registrations.</item>
     /// </list>
     /// </summary>
     public static IServiceCollection AddTripsOptimisation(this IServiceCollection services)
@@ -44,6 +51,12 @@ public static class DependencyInjection
         services.AddKeyedSingleton<ISolver>("or-tools", (sp, _) => sp.GetRequiredService<OrToolsSolver>());
 
         services.AddSingleton<SolutionPostprocessor>();
+
+        // WS7 advanced features.
+        services.TryAddSingleton(ReturnTripPlannerOptions.Default);
+        services.AddScoped<ICostSplitService, CostSplitService>();
+        services.AddScoped<IReturnTripPlanner, ReturnTripPlanner>();
+        services.AddScoped<IWhatIfService, WhatIfService>();
         return services;
     }
 }

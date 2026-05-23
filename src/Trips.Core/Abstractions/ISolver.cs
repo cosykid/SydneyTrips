@@ -27,6 +27,9 @@ public interface ISolver
 /// <param name="Nodes">All candidate nodes referenced by passengers, plus driver origins and the destination.</param>
 /// <param name="TravelMatrix">Driving-time matrix in minutes between every node pair, indexed by <see cref="SolverNode.Index"/>.</param>
 /// <param name="DepartAt">Anchor time for arrival/spread calculations.</param>
+/// <param name="WarmStartHint">Optional warm-start hint from a previous solution (used by what-if re-optimisation).
+/// When non-null, OR-Tools applies it via <c>model.AddHint</c> to bias the search toward the locked plan, so
+/// minor changes (drop/add passenger) produce minimal-disruption re-optimisation. Null on a cold-start run.</param>
 public sealed record SolverInput(
     Guid RunId,
     Guid TripId,
@@ -35,7 +38,28 @@ public sealed record SolverInput(
     IReadOnlyList<SolverPassenger> Passengers,
     IReadOnlyList<SolverNode> Nodes,
     double[,] TravelMatrix,
-    DateTimeOffset DepartAt);
+    DateTimeOffset DepartAt,
+    WarmStartHint? WarmStartHint = null);
+
+/// <summary>
+/// Hint that biases an OR-Tools solve toward a previously-locked plan. Encodes the assignment as
+/// (passenger → driver, node) tuples and the per-driver ordered node sequence. The solver feeds these
+/// to <c>CpModel.AddHint</c> on <c>assign</c>, <c>visit</c>, and <c>arc</c> variables; CP-SAT treats the
+/// hint as an initial solution to repair rather than a constraint, so the optimum can still drift.
+/// </summary>
+/// <param name="Assignments">Passenger → (driver index, node index) pairs from the locked solution.
+/// Use <see cref="SolverInput.Drivers"/> / <see cref="SolverInput.Nodes"/> indices, not domain GUIDs.</param>
+/// <param name="DriverSequences">For each driver index, the ordered list of pickup-node indices visited.
+/// Same coordinate system as <paramref name="Assignments"/>.</param>
+public sealed record WarmStartHint(
+    IReadOnlyList<WarmStartAssignment> Assignments,
+    IReadOnlyList<IReadOnlyList<int>> DriverSequences);
+
+/// <summary>One passenger's pinned location in a <see cref="WarmStartHint"/>.</summary>
+/// <param name="PassengerIndex">Index into <see cref="SolverInput.Passengers"/>.</param>
+/// <param name="DriverIndex">Index into <see cref="SolverInput.Drivers"/>.</param>
+/// <param name="NodeIndex">Node index from <see cref="SolverInput.Nodes"/>.</param>
+public sealed record WarmStartAssignment(int PassengerIndex, int DriverIndex, int NodeIndex);
 
 /// <summary>One driver entry in <see cref="SolverInput"/>.</summary>
 /// <param name="ParticipantId">Domain participant id.</param>
