@@ -1,0 +1,118 @@
+# =========================
+# .NET
+# =========================
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+.vs/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.pidb
+*.svclog
+*.scc
+TestResult.xml
+nunit-*.xml
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# EF Core
+*.mdf
+*.ldf
+*.ndf
+
+# User secrets
+**/secrets.json
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+
+# =========================
+# Node / Next.js
+# =========================
+node_modules/
+.next/
+out/
+.nuxt/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.yarn/cache
+.yarn/install-state.gz
+.npm
+.eslintcache
+*.tsbuildinfo
+next-env.d.ts
+
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# =========================
+# Docker volumes
+# =========================
+infra/data/
+**/postgres-data/
+**/redis-data/
+
+# =========================
+# macOS
+# =========================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# =========================
+# IDEs
+# =========================
+.idea/
+*.iml
+.fleet/
+.rider/
+
+# =========================
+# Tooling
+# =========================
+.tools/
+.benchmark-results/
