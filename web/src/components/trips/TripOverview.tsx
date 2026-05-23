@@ -1,9 +1,10 @@
 "use client";
 
 import { format } from "date-fns";
-import { Loader2, MapPin } from "lucide-react";
+import { CalendarPlus, Loader2, MapPin } from "lucide-react";
 import { useTrip } from "@/lib/api/hooks";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ParticipantList } from "./ParticipantList";
@@ -67,10 +68,33 @@ export function TripOverview({ tripId }: { tripId: string }): React.JSX.Element 
             </div>
           </dl>
           <Separator className="my-4" />
-          <p className="text-muted-foreground text-xs">
-            Open the planner to render origins + candidate pickup nodes on the map and trigger
-            optimisation.
-          </p>
+          {t.hasLockedSolution ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Calendar holds:</span>
+              {t.participants.map((p) => (
+                <Button
+                  key={p.id}
+                  variant="outline"
+                  size="xs"
+                  render={
+                    <a
+                      href={`/api/proxy/trips/${tripId}/participants/${p.id}/calendar.ics`}
+                      download={`${t.name}-${p.displayName}.ics`}
+                    />
+                  }
+                  nativeButton={false}
+                >
+                  <CalendarPlus className="mr-1 h-3 w-3" />
+                  {p.displayName}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              Open the planner to render origins + candidate pickup nodes on the map and trigger
+              optimisation.
+            </p>
+          )}
         </CardContent>
       </Card>
       <ParticipantList tripId={tripId} participants={t.participants} />
