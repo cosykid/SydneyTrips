@@ -1,4 +1,5 @@
 using Trips.Core.Abstractions;
+using Trips.Realtime.Hubs;
 
 namespace Trips.Api.Auth;
 
@@ -6,7 +7,7 @@ namespace Trips.Api.Auth;
 /// Centralised check for "is the calling user allowed to act on this trip?". Used by every
 /// trip-scoped endpoint. A user can act on a trip if they are the owner OR a participant.
 /// </summary>
-public sealed class TripAuthorizationService
+public sealed class TripAuthorizationService : ITripHubAuthorizer
 {
     private readonly ITripRepository _trips;
     private readonly IParticipantRepository _participants;

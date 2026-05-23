@@ -19,6 +19,8 @@ using Trips.Core.Infrastructure;
 using Trips.Data;
 using Trips.Integrations;
 using Trips.Optimisation;
+using Trips.Realtime;
+using Trips.Realtime.Hubs;
 
 const string DevCorsPolicy = "DevFrontend";
 
@@ -84,7 +86,25 @@ if (string.IsNullOrWhiteSpace(builder.Configuration[$"{AuthOptions.SectionName}:
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer();
+    .AddJwtBearer(options =>
+    {
+        // SignalR clients can't set the Authorization header on a WebSocket upgrade, so they pass
+        // the JWT via the standard `access_token` query string. Pull it through here so the hub
+        // sees an authenticated principal in Context.User.
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var accessToken = ctx.Request.Query["access_token"];
+                var path = ctx.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                {
+                    ctx.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
+        };
+    });
 
 // PostConfigure resolves the latest AuthOptions snapshot so issuer and validator agree on the key
 // (matters in tests where WebApplicationFactory injects a different key after the builder runs).
@@ -96,6 +116,8 @@ builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<TripAuthorizationService>();
+// Same instance backs both the endpoint-side check and the hub-side check.
+builder.Services.AddScoped<ITripHubAuthorizer>(sp => sp.GetRequiredService<TripAuthorizationService>());
 builder.Services.AddScoped<ParticipantCandidateNodeService>();
 
 // Background optimisation runner: a singleton queue + hosted service consumer.
@@ -103,6 +125,9 @@ builder.Services.Configure<OptimisationOptions>(builder.Configuration.GetSection
 builder.Services.AddSingleton<OptimisationJobQueue>();
 builder.Services.AddSingleton<IOptimisationJobQueue>(sp => sp.GetRequiredService<OptimisationJobQueue>());
 builder.Services.AddHostedService<OptimisationRunner>();
+
+// SignalR hub + ETA recompute pipeline + GTFS-Realtime worker. See Trips.Realtime/DependencyInjection.
+builder.Services.AddTripsRealtime(builder.Configuration);
 
 // Validation.
 builder.Services.AddValidatorsFromAssemblyContaining<CreateTripRequestValidator>(ServiceLifetime.Singleton);
@@ -166,6 +191,9 @@ app.MapTrips();
 app.MapParticipants();
 app.MapOptimisation();
 app.MapAdvanced();
+app.MapEvents();
+
+app.MapHub<TripHub>("/hubs/trip");
 
 app.Run();
 

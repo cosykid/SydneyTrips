@@ -1,8 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Trips.Core\Trips.Core.csproj" />
     <ProjectReference Include="..\Trips.Data\Trips.Data.csproj" />
+    <ProjectReference Include="..\Trips.Optimisation\Trips.Optimisation.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -10,5 +11,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Trips.Realtime.Tests" />
+  </ItemGroup>
 
 </Project>
