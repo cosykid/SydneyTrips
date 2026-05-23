@@ -29,6 +29,7 @@ internal sealed class TripRepository : ITripRepository
 
     public async Task<IReadOnlyList<Trip>> ListForOwnerAsync(Guid ownerId, CancellationToken ct) =>
         await _db.Trips
+            .Include(t => t.Participants)
             .Where(t => t.OwnerId == ownerId)
             .OrderByDescending(t => t.DepartAt)
             .ToListAsync(ct);

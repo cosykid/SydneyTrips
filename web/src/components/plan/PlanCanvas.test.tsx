@@ -6,8 +6,10 @@ import { PlanCanvas } from "./PlanCanvas";
 import type {
   ParetoResponse,
   RunSolutionResponse,
-  Trip,
 } from "@/lib/api/schema";
+import type { components } from "@/lib/api/types";
+
+type TripDetailDto = components["schemas"]["TripDetailDto"];
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -19,28 +21,43 @@ vi.mock("./PlanMap", () => ({
   PlanMap: () => <div data-testid="map-stub" />,
 }));
 
-const trip: Trip = {
+const trip: TripDetailDto = {
   id: "trip-1",
   name: "Test trip",
-  destinationAddress: "Palm Beach NSW",
-  destination: { lat: -33.6, lng: 151.32 },
+  destinationName: "Palm Beach NSW",
+  destinationLongitude: 151.32,
+  destinationLatitude: -33.6,
   departAt: new Date("2026-06-01T09:00:00Z").toISOString(),
-  arrivalWindowMinutes: 15,
-  status: "draft",
-  participantCount: 2,
-  hasLockedSolution: false,
+  arrivalWindowEarliest: new Date("2026-06-01T09:15:00Z").toISOString(),
+  arrivalWindowLatest: new Date("2026-06-01T09:45:00Z").toISOString(),
+  ownerId: "00000000-0000-0000-0000-000000000000",
+  createdAt: new Date("2026-05-01T00:00:00Z").toISOString(),
+  lockedSolutionId: null,
   participants: [
     {
       id: "p-1",
+      tripId: "trip-1",
+      userId: "u-1",
       displayName: "Alex",
-      role: "driver",
-      originAddress: "1 George St",
-      origin: { lat: -33.86, lng: 151.2 },
-      seatsAvailable: 4,
+      homeLongitude: 151.2,
+      homeLatitude: -33.86,
+      hasCar: true,
+      seats: 4,
+      preferences: { walkBudgetMins: 15, detourToleranceMins: 10, fairnessWeight: 1 },
+      candidateNodes: [
+        {
+          id: "n-1",
+          participantId: "p-1",
+          kind: 2,
+          longitude: 151.21,
+          latitude: -33.87,
+          walkMins: 5,
+          ptMins: 0,
+          externalId: null,
+          displayName: "Glebe Pt Rd Stop",
+        },
+      ],
     },
-  ],
-  candidateNodes: [
-    { id: "n-1", location: { lat: -33.87, lng: 151.21 }, modality: "bus_stop" },
   ],
 };
 

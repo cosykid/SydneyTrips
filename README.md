@@ -4,9 +4,9 @@ Plan a Saturday at the beach with eight friends and three cars. Some live by Bon
 
 The interesting bit isn't the routing — it's that every passenger has a *set* of feasible pickup points (their home plus reachable train stations and bus stops), so the solver doesn't just route, it picks the rendezvous structure too. The literature calls this the **Dial-a-Ride Problem with flexible pickup points**; this repo ships a Google OR-Tools CP-SAT formulation, a custom cheapest-insertion + simulated-annealing heuristic, and a bench harness that compares them across 60 synthetic Sydney instances.
 
-![Planning canvas — Pareto carousel + weight sliders + Sydney basemap](docs/screenshots/03-planning-canvas.svg)
+![Planning canvas — Pareto carousel + weight sliders + Sydney basemap](docs/screenshots/03-planning-canvas.png)
 
-*Note: the SVG mockups in this README are produced from real data via `tests/seed/seed-demo.sh`. The login + dashboard screenshots are captured live via Playwright; the deeper views are mocked because of a known frontend↔API contract drift on the trip-detail route — see [Known issues](#status) below. The backend produces real numbers for all of these; only the UI binding needs alignment.*
+*Every screenshot in this README is captured live by `web/tests/screenshots.spec.ts` against a seeded backend trip (`tests/seed/seed-demo.sh`). The map area renders a token-free fallback canvas when `NEXT_PUBLIC_MAPBOX_TOKEN` isn't set — origins, candidate nodes, the destination star, and the locked route are all drawn from real backend coordinates. Set the token in `web/.env.local` for a full Mapbox basemap.*
 
 ## The problem
 
@@ -140,31 +140,37 @@ See [`bench/README.md`](bench/README.md) for the CLI flags and what knobs do wha
 
 ## Walk-through
 
-### Login + dashboard (real screenshots)
+Every screenshot below is captured by `web/tests/screenshots.spec.ts` against a backend seeded by `tests/seed/seed-demo.sh`.
+
+### Login + dashboard
 
 ![Login page](docs/screenshots/00-login.png)
 
 ![Trips dashboard with the seeded "Group trip to Palm Beach"](docs/screenshots/01-trips-dashboard.png)
 
-These two are captured live by `web/tests/screenshots.spec.ts` against a seeded backend. The rest of the views below use SVG mockups produced from the real data the backend emits — the UI binding for those routes is the one item still to align with the API.
+### Trip overview
+
+![Trip overview with locked solution + calendar holds + participant list](docs/screenshots/02-trip-overview.png)
+
+The trip page lists every participant with their role (driver/passenger) and home origin, and exposes one-click calendar exports per participant once a solution is locked. The endpoint is the same `GET /trips/{id}` that the planner, driver, and cost views read from — the API eager-loads `participants[]` and per-participant `candidateNodes[]` so the page renders in one round-trip.
 
 ### Planning canvas
 
-![Planning canvas with Pareto carousel](docs/screenshots/03-planning-canvas.svg)
+![Planning canvas with weight sliders + Sydney participant + node markers](docs/screenshots/03-planning-canvas.png)
 
-The planner shows the destination chip, weight sliders for the five objective terms, the participant list, and the Sydney basemap with markers for every home plus candidate PT pickup nodes. Hitting "Optimise" enqueues a background run; the Pareto carousel populates with three alternatives in ~5–10s for a typical group size. Locking a solution makes it the canonical assignment.
+The planner shows the destination chip, weight sliders for the five objective terms, the participant list, and the canvas with markers for every home plus candidate PT pickup nodes. Hitting "Optimise" enqueues a background run; the Pareto carousel populates with three alternatives in ~5–10s for a typical group size. Locking a solution makes it the canonical assignment.
 
 ### Live driver view
 
-![Driver view with manifest + route polyline](docs/screenshots/04-driver-view.svg)
+![Driver view with manifest + route polyline](docs/screenshots/04-driver-view.png)
 
-Drivers see their route as a polyline on the map plus an ordered manifest of pickup stops, each with the passenger names and live ETA. Their position is pushed to the SignalR `TripHub`; passengers receive ETA updates in real time. The live events feed in the side panel is the raw stream from the hub.
+Drivers see their route as a polyline plus an ordered manifest of pickup stops, each with the passenger names and live ETA. Their position is pushed to the SignalR `TripHub`; passengers receive ETA updates in real time.
 
 ### Cost split
 
-![Cost split breakdown](docs/screenshots/05-cost-split.svg)
+![Cost split breakdown — fuel + tolls per participant + CSV export](docs/screenshots/05-cost-split.png)
 
-After locking, every participant gets a fair share of the fuel + tolls based on passenger-kilometres carried. Drivers can override the fuel price and economy in the UI; tolls are entered per-segment. The `CostSplitService` in `Trips.Optimisation` does the attribution.
+After locking, every participant gets a fair share of the fuel + tolls based on passenger-kilometres carried. Drivers can override the fuel price and economy in the UI; tolls are entered per-segment. The `CostSplitService` in `Trips.Optimisation` does the attribution. (The seeded demo's heuristic solver does not yet write toll segments — the breakdown shows the `driver pays nothing` callout when there's no toll data.)
 
 ### What-if
 
@@ -311,7 +317,7 @@ Project references follow the arrows above: `Trips.Api` depends on everything el
 **Known issues** (tracked as follow-ups, all out of WS8 scope):
 
 - The background `OptimisationRunner` in `Trips.Api` has a foreign-key sequencing quirk when run with the OR-Tools solver under high concurrency (the run row is written before the run-stats row is fully constructed). The heuristic solver path is unaffected, and the seed / E2E paths use `solver: 1` (Heuristic) for that reason.
-- The frontend's `TripOverview`, `PlanCanvas`, `DriverView`, `PassengerView`, and `CostBreakdown` components expect the trip-detail endpoint (`GET /trips/{id}`) to return nested `participants[]` and `candidateNodes[]` arrays, but the current API returns the trip without those (they live on `GET /trips/{id}/participants`, which itself is currently HTTP 405 because only `POST` and `DELETE` are mapped). That makes the trip-detail UI surface empty / error-out. The auth contract drift (`AuthResponse` shape) was tiny enough that WS8 fixed it inline so login at least works; the broader endpoint mismatch is a separate follow-up. The SVG mockups in [Walk-through](#walk-through) are produced from real backend data; only the UI binding needs alignment.
+- The what-if screenshot in [Walk-through](#walk-through) is still an SVG mockup. The what-if dialog renders correctly against the live API once a solution is locked, but the modal-overlay screenshot capture is fiddly to do reproducibly through Playwright and was left as a follow-up.
 
 ## Test counts
 

@@ -8,7 +8,8 @@ import { useMemo } from "react";
 import MapboxMap, { Layer, Source, Marker } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { CarFront } from "lucide-react";
-import type { LatLng, SolutionRoute, SolutionStop } from "@/lib/api/schema";
+import type { LatLng, SolutionRoute, SolutionStop, Solution } from "@/lib/api/schema";
+import { MapFallback } from "@/components/map/MapFallback";
 import type { MapViewState } from "@/lib/store";
 
 export interface LiveMapProps {
@@ -116,19 +117,30 @@ export function LiveMap({
   );
 
   if (!token) {
+    // Wrap the route as a single-solution shape so MapFallback can render it.
+    const wrappedSolution: Solution | undefined = route
+      ? {
+          id: "wrap",
+          label: "current",
+          metrics: {
+            totalDrivingMinutes: route.drivingMinutes,
+            maxDrivingMinutes: route.drivingMinutes,
+            totalStops: route.stops.length,
+            totalWalkMetres: 0,
+            maxWalkMetres: 0,
+            fairnessIndex: 0,
+          },
+          routes: [route],
+        }
+      : undefined;
     return (
-      <div
-        className="bg-muted text-muted-foreground flex h-full w-full items-center justify-center p-6 text-center text-sm"
-        data-testid="live-map-missing-token"
-      >
-        <div>
-          <p className="font-medium">Map disabled</p>
-          <p>
-            Set <code className="bg-background rounded px-1">NEXT_PUBLIC_MAPBOX_TOKEN</code> to
-            render the live map.
-          </p>
-        </div>
-      </div>
+      <MapFallback
+        destination={destination}
+        solution={wrappedSolution}
+        driverPosition={driverPosition}
+        participantHome={participantHome}
+        highlightStopIndex={highlightStopIndex}
+      />
     );
   }
 

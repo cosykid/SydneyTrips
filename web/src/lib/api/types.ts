@@ -212,6 +212,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/trips/{tripId}/locked-solution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["GetLockedSolution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips/{tripId}/whatif": {
         parameters: {
             query?: never;
@@ -317,6 +333,24 @@ export interface components {
             email: string;
             displayName: string;
         };
+        CandidateNodeDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            participantId: string;
+            kind: components["schemas"]["CandidateNodeKindDto"];
+            /** Format: double */
+            longitude: number | string;
+            /** Format: double */
+            latitude: number | string;
+            /** Format: int32 */
+            walkMins: number | string;
+            /** Format: int32 */
+            ptMins: number | string;
+            externalId: null | string;
+            displayName: null | string;
+        };
+        CandidateNodeKindDto: number;
         CostSplitEntry: {
             /** Format: uuid */
             participantId: string;
@@ -457,6 +491,24 @@ export interface components {
             seats: number | string;
             preferences: components["schemas"]["PreferencesDto"];
         };
+        ParticipantWithNodesDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tripId: string;
+            /** Format: uuid */
+            userId: string;
+            displayName: string;
+            /** Format: double */
+            homeLongitude: number | string;
+            /** Format: double */
+            homeLatitude: number | string;
+            hasCar: boolean;
+            /** Format: int32 */
+            seats: number | string;
+            preferences: components["schemas"]["PreferencesDto"];
+            candidateNodes: components["schemas"]["CandidateNodeDto"][];
+        };
         PreferencesDto: {
             /** Format: int32 */
             walkBudgetMins: number | string;
@@ -525,6 +577,29 @@ export interface components {
             /** Format: double */
             amount: number | string;
         };
+        TripDetailDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            destinationName: string;
+            /** Format: double */
+            destinationLongitude: number | string;
+            /** Format: double */
+            destinationLatitude: number | string;
+            /** Format: date-time */
+            departAt: string;
+            /** Format: date-time */
+            arrivalWindowEarliest: string;
+            /** Format: date-time */
+            arrivalWindowLatest: string;
+            /** Format: uuid */
+            ownerId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: uuid */
+            lockedSolutionId: null | string;
+            participants: components["schemas"]["ParticipantWithNodesDto"][];
+        };
         TripDto: {
             /** Format: uuid */
             id: string;
@@ -546,6 +621,8 @@ export interface components {
             createdAt: string;
             /** Format: uuid */
             lockedSolutionId: null | string;
+            /** Format: int32 */
+            participantCount: number | string;
         };
         TripEventDto: {
             /** Format: uuid */
@@ -728,7 +805,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TripDto"];
+                    "application/json": components["schemas"]["TripDetailDto"];
                 };
             };
             /** @description Not Found */
@@ -977,6 +1054,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TripDto"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    GetLockedSolution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SolutionDto"];
                 };
             };
             /** @description Not Found */

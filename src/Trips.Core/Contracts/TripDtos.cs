@@ -12,7 +12,25 @@ public sealed record TripDto(
     DateTimeOffset ArrivalWindowLatest,
     Guid OwnerId,
     DateTimeOffset CreatedAt,
-    Guid? LockedSolutionId);
+    Guid? LockedSolutionId,
+    int ParticipantCount);
+
+/// <summary>Eager-loaded trip view used by GET /trips/{id}. Carries the participants
+/// (with their candidate pickup nodes) inline so the planner / driver / cost views
+/// can render in a single round-trip.</summary>
+public sealed record TripDetailDto(
+    Guid Id,
+    string Name,
+    string DestinationName,
+    double DestinationLongitude,
+    double DestinationLatitude,
+    DateTimeOffset DepartAt,
+    DateTimeOffset ArrivalWindowEarliest,
+    DateTimeOffset ArrivalWindowLatest,
+    Guid OwnerId,
+    DateTimeOffset CreatedAt,
+    Guid? LockedSolutionId,
+    IReadOnlyList<ParticipantWithNodesDto> Participants);
 
 /// <summary>Payload to POST /trips.</summary>
 public sealed record CreateTripRequest(

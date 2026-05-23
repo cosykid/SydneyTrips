@@ -115,4 +115,28 @@ test.describe.serial("hero screenshots", () => {
       fullPage: true,
     });
   });
+
+  test("06 — what-if dialog", async ({ page }) => {
+    // Walks the locked-solution path: open planner → re-run optimisation →
+    // wait for the Pareto carousel → open the what-if modal on the locked
+    // candidate. The seeded trip has paretoIndex 0 locked already, and the
+    // store's activeRunId is per-session — so we trigger a fresh run here
+    // to populate the carousel.
+    await loginViaUi(page, seed.email, seed.password);
+    await page.goto(`/trips/${seed.tripId}/plan`);
+    await page.waitForLoadState("networkidle");
+    await page.getByRole("button", { name: /^Optimise$/i }).click();
+    // Wait for the carousel to populate. The Pareto query polls a few times
+    // before the runner reaches `completed`, so this can take ~5–10s.
+    await page.getByTestId("pareto-carousel").waitFor({ timeout: 30_000 });
+    // The "What if" button only renders on the locked tile. The seed locked
+    // paretoIndex 0, so click the first tile's what-if action.
+    const whatIfButton = page.getByRole("button", { name: /What if/i }).first();
+    await whatIfButton.click();
+    await page.waitForTimeout(1_500);
+    await page.screenshot({
+      path: path.join(SHOTS_DIR, "06-whatif-diff.png"),
+      fullPage: true,
+    });
+  });
 });

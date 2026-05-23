@@ -11,6 +11,7 @@ import type {
   TripSummary,
 } from "@/lib/api/schema";
 import { driverColour } from "@/lib/map/palette";
+import { MapFallback } from "@/components/map/MapFallback";
 import type { MapViewState } from "@/lib/store";
 
 export interface PlanMapProps {
@@ -132,18 +133,12 @@ export function PlanMap({
 
   if (!token) {
     return (
-      <div
-        className="bg-muted text-muted-foreground flex h-full w-full items-center justify-center p-6 text-center text-sm"
-        data-testid="map-missing-token"
-      >
-        <div>
-          <p className="font-medium">Map disabled</p>
-          <p>
-            Set <code className="bg-background rounded px-1">NEXT_PUBLIC_MAPBOX_TOKEN</code> in
-            web/.env.local to enable the Mapbox canvas.
-          </p>
-        </div>
-      </div>
+      <MapFallback
+        destination={destination}
+        participants={participants}
+        candidateNodes={candidateNodes}
+        solution={solution}
+      />
     );
   }
 

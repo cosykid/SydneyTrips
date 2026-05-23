@@ -187,7 +187,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TripDto"
+                  "$ref": "#/components/schemas/TripDetailDto"
                 }
               }
             }
@@ -523,6 +523,40 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TripDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/locked-solution": {
+      "get": {
+        "tags": [
+          "Advanced"
+        ],
+        "operationId": "GetLockedSolution",
+        "parameters": [
+          {
+            "name": "tripId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolutionDto"
                 }
               }
             }
@@ -893,6 +927,80 @@
             "type": "string"
           }
         }
+      },
+      "CandidateNodeDto": {
+        "required": [
+          "id",
+          "participantId",
+          "kind",
+          "longitude",
+          "latitude",
+          "walkMins",
+          "ptMins",
+          "externalId",
+          "displayName"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "participantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CandidateNodeKindDto"
+          },
+          "longitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "latitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "walkMins": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "ptMins": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "externalId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "CandidateNodeKindDto": {
+        "type": "integer"
       },
       "CostSplitEntry": {
         "required": [
@@ -1451,6 +1559,74 @@
           }
         }
       },
+      "ParticipantWithNodesDto": {
+        "required": [
+          "id",
+          "tripId",
+          "userId",
+          "displayName",
+          "homeLongitude",
+          "homeLatitude",
+          "hasCar",
+          "seats",
+          "preferences",
+          "candidateNodes"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "homeLongitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "homeLatitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "hasCar": {
+            "type": "boolean"
+          },
+          "seats": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PreferencesDto"
+          },
+          "candidateNodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CandidateNodeDto"
+            }
+          }
+        }
+      },
       "PreferencesDto": {
         "required": [
           "walkBudgetMins",
@@ -1714,7 +1890,7 @@
           }
         }
       },
-      "TripDto": {
+      "TripDetailDto": {
         "required": [
           "id",
           "name",
@@ -1726,7 +1902,8 @@
           "arrivalWindowLatest",
           "ownerId",
           "createdAt",
-          "lockedSolutionId"
+          "lockedSolutionId",
+          "participants"
         ],
         "type": "object",
         "properties": {
@@ -1782,6 +1959,92 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantWithNodesDto"
+            }
+          }
+        }
+      },
+      "TripDto": {
+        "required": [
+          "id",
+          "name",
+          "destinationName",
+          "destinationLongitude",
+          "destinationLatitude",
+          "departAt",
+          "arrivalWindowEarliest",
+          "arrivalWindowLatest",
+          "ownerId",
+          "createdAt",
+          "lockedSolutionId",
+          "participantCount"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "destinationName": {
+            "type": "string"
+          },
+          "destinationLongitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "destinationLatitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "departAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arrivalWindowEarliest": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arrivalWindowLatest": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lockedSolutionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "participantCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },

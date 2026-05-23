@@ -94,12 +94,13 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
   // Debounce refetch when the user tweaks the cost inputs. The mock endpoint
   // doesn't yet take these as query params, but the UI is correct in advance
   // — when WS7 wires them in we'll have to thread them through `useCostSplit`.
+  const refetch = split.refetch;
   useEffect(() => {
     const id = setTimeout(() => {
-      split.refetch();
+      refetch();
     }, 350);
     return () => clearTimeout(id);
-  }, [inputs.fuelPricePerLitre, inputs.litresPer100Km, split]);
+  }, [inputs.fuelPricePerLitre, inputs.litresPer100Km, refetch]);
 
   const participantNames = useMemo<Map<string, string>>(() => {
     const map = new Map<string, string>();

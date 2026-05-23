@@ -30,6 +30,8 @@ public static class AdvancedEndpoints
             .AddEndpointFilter<ValidationFilter<LockSolutionRequest>>()
             .WithName("LockSolution");
 
+        group.MapGet("/locked-solution", GetLockedSolutionAsync).WithName("GetLockedSolution");
+
         group.MapPost("/whatif", WhatIfAsync)
             .AddEndpointFilter<ValidationFilter<WhatIfRequest>>()
             .WithName("WhatIf");
@@ -94,7 +96,30 @@ public static class AdvancedEndpoints
             timestamp: clock.UtcNow), ct).ConfigureAwait(false);
         await trips.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        return TypedResults.Ok(trip.ToDto());
+        // Re-fetch with participants loaded so ParticipantCount in the response is accurate
+        // (authz returned the bare entity).
+        var reloaded = await trips.GetWithParticipantsAsync(tripId, ct).ConfigureAwait(false) ?? trip;
+        return TypedResults.Ok(reloaded.ToDto());
+    }
+
+    private static async Task<Results<Ok<SolutionDto>, NotFound>> GetLockedSolutionAsync(
+        Guid tripId,
+        TripAuthorizationService authz,
+        ISolutionRepository solutions,
+        CurrentUser currentUser,
+        CancellationToken ct)
+    {
+        var trip = await authz.AuthorizeAsync(tripId, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        if (trip is null || trip.LockedSolutionId is null)
+        {
+            return TypedResults.NotFound();
+        }
+        var solution = await solutions.GetByIdAsync(trip.LockedSolutionId.Value, ct).ConfigureAwait(false);
+        if (solution is null)
+        {
+            return TypedResults.NotFound();
+        }
+        return TypedResults.Ok(solution.ToDto());
     }
 
     private static async Task<Results<Accepted<EnqueueRunResponse>, NotFound, ProblemHttpResult>> WhatIfAsync(

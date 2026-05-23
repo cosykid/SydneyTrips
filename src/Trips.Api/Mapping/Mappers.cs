@@ -23,7 +23,32 @@ internal static class Mappers
             ArrivalWindowLatest: trip.ArrivalWindowLatest,
             OwnerId: trip.OwnerId,
             CreatedAt: trip.CreatedAt,
-            LockedSolutionId: trip.LockedSolutionId);
+            LockedSolutionId: trip.LockedSolutionId,
+            ParticipantCount: trip.Participants.Count);
+    }
+
+    /// <summary>Mapper for GET /trips/{id} — assumes the trip was loaded via
+    /// <see cref="ITripRepository.GetWithParticipantsAsync"/> so Participants and their
+    /// CandidateNodes are populated.</summary>
+    public static TripDetailDto ToDetailDto(this Trip trip)
+    {
+        ArgumentNullException.ThrowIfNull(trip);
+        var participants = trip.Participants
+            .Select(p => p.ToDetailDto())
+            .ToList();
+        return new TripDetailDto(
+            Id: trip.Id,
+            Name: trip.Name,
+            DestinationName: trip.DestinationName,
+            DestinationLongitude: trip.DestinationLocation.X,
+            DestinationLatitude: trip.DestinationLocation.Y,
+            DepartAt: trip.DepartAt,
+            ArrivalWindowEarliest: trip.ArrivalWindowEarliest,
+            ArrivalWindowLatest: trip.ArrivalWindowLatest,
+            OwnerId: trip.OwnerId,
+            CreatedAt: trip.CreatedAt,
+            LockedSolutionId: trip.LockedSolutionId,
+            Participants: participants);
     }
 
     public static ParticipantDto ToDto(this Participant p)
@@ -39,6 +64,34 @@ internal static class Mappers
             HasCar: p.HasCar,
             Seats: p.Seats,
             Preferences: new PreferencesDto(p.WalkBudgetMins, p.DetourToleranceMins, p.FairnessWeight));
+    }
+
+    public static ParticipantWithNodesDto ToDetailDto(this Participant p)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        var nodes = p.CandidateNodes
+            .Select(n => new CandidateNodeDto(
+                Id: n.Id,
+                ParticipantId: n.ParticipantId,
+                Kind: (CandidateNodeKindDto)n.Kind,
+                Longitude: n.Location.X,
+                Latitude: n.Location.Y,
+                WalkMins: n.WalkMins,
+                PtMins: n.PtMins,
+                ExternalId: n.ExternalId,
+                DisplayName: n.DisplayName))
+            .ToList();
+        return new ParticipantWithNodesDto(
+            Id: p.Id,
+            TripId: p.TripId,
+            UserId: p.UserId,
+            DisplayName: p.DisplayName,
+            HomeLongitude: p.Home.X,
+            HomeLatitude: p.Home.Y,
+            HasCar: p.HasCar,
+            Seats: p.Seats,
+            Preferences: new PreferencesDto(p.WalkBudgetMins, p.DetourToleranceMins, p.FairnessWeight),
+            CandidateNodes: nodes);
     }
 
     public static OptimisationRunDto ToDto(this OptimisationRun run)

@@ -3,7 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CostBreakdown } from "./CostBreakdown";
-import type { CostSplit, Trip } from "@/lib/api/schema";
+import type { components } from "@/lib/api/types";
+
+type TripDetailDto = components["schemas"]["TripDetailDto"];
+type CostSplitResponse = components["schemas"]["CostSplitResponse"];
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -26,68 +29,72 @@ vi.mock("@/lib/api/client", async () => {
   };
 });
 
-const trip: Trip = {
+const prefs = { walkBudgetMins: 15, detourToleranceMins: 10, fairnessWeight: 1 };
+const trip: TripDetailDto = {
   id: "trip-1",
   name: "Test trip",
-  destinationAddress: "Palm Beach",
-  destination: { lat: -33.6, lng: 151.32 },
+  destinationName: "Palm Beach",
+  destinationLongitude: 151.32,
+  destinationLatitude: -33.6,
   departAt: new Date("2026-06-01T09:00:00Z").toISOString(),
-  arrivalWindowMinutes: 15,
-  status: "planned",
-  participantCount: 3,
-  hasLockedSolution: true,
+  arrivalWindowEarliest: new Date("2026-06-01T09:15:00Z").toISOString(),
+  arrivalWindowLatest: new Date("2026-06-01T09:45:00Z").toISOString(),
+  ownerId: "00000000-0000-0000-0000-000000000000",
+  createdAt: new Date("2026-05-01T00:00:00Z").toISOString(),
   lockedSolutionId: "sol-1",
   participants: [
     {
       id: "p-1",
+      tripId: "trip-1",
+      userId: "u-1",
       displayName: "Alex",
-      role: "driver",
-      originAddress: "1 George St",
-      origin: { lat: -33.86, lng: 151.2 },
-      seatsAvailable: 4,
+      homeLongitude: 151.2,
+      homeLatitude: -33.86,
+      hasCar: true,
+      seats: 4,
+      preferences: prefs,
+      candidateNodes: [],
     },
     {
       id: "p-2",
+      tripId: "trip-1",
+      userId: "u-2",
       displayName: "Bri",
-      role: "passenger",
-      originAddress: "10 Glebe Pt Rd",
-      origin: { lat: -33.88, lng: 151.18 },
+      homeLongitude: 151.18,
+      homeLatitude: -33.88,
+      hasCar: false,
+      seats: 0,
+      preferences: prefs,
+      candidateNodes: [],
     },
     {
       id: "p-3",
+      tripId: "trip-1",
+      userId: "u-3",
       displayName: "Cam",
-      role: "passenger",
-      originAddress: "5 Hereford St",
-      origin: { lat: -33.87, lng: 151.17 },
+      homeLongitude: 151.17,
+      homeLatitude: -33.87,
+      hasCar: false,
+      seats: 0,
+      preferences: prefs,
+      candidateNodes: [],
     },
   ],
-  candidateNodes: [],
 };
 
-const costSplit: CostSplit = {
+const costSplit: CostSplitResponse = {
   tripId: "trip-1",
-  currency: "AUD",
-  totalCost: 38.4,
-  perParticipant: [
-    {
-      participantId: "p-1",
-      displayName: "Alex",
-      amount: 0,
-      breakdown: { fuel: 0, tolls: 0 },
-    },
-    {
-      participantId: "p-2",
-      displayName: "Bri",
-      amount: 20.4,
-      breakdown: { fuel: 18, tolls: 2.4 },
-    },
-    {
-      participantId: "p-3",
-      displayName: "Cam",
-      amount: 18,
-      breakdown: { fuel: 16, tolls: 2 },
-    },
+  solutionId: "sol-1",
+  entries: [
+    { participantId: "p-1", displayName: "Alex", fuelShare: 0, tollShare: 0, total: 0 },
+    { participantId: "p-2", displayName: "Bri", fuelShare: 18, tollShare: 2.4, total: 20.4 },
+    { participantId: "p-3", displayName: "Cam", fuelShare: 16, tollShare: 2, total: 18 },
   ],
+  totalCost: 38.4,
+  totalFuel: 34,
+  totalTolls: 4.4,
+  fuelPricePerLitre: 2.1,
+  fuelEconomyLPer100Km: 8.5,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -150,10 +157,14 @@ describe("CostBreakdown", () => {
       if (path === "/trips/trip-1/cost-split")
         return jsonResponse({
           tripId: "trip-1",
-          currency: "AUD",
+          solutionId: "sol-1",
+          entries: [],
           totalCost: 0,
-          perParticipant: [],
-        });
+          totalFuel: 0,
+          totalTolls: 0,
+          fuelPricePerLitre: 2.1,
+          fuelEconomyLPer100Km: 8.5,
+        } satisfies CostSplitResponse);
       return jsonResponse({ message: "x" }, 500);
     });
     renderBreakdown();

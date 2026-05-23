@@ -79,18 +79,26 @@ public static class TripEndpoints
         return TypedResults.Ok(dtos);
     }
 
-    private static async Task<Results<Ok<TripDto>, NotFound, ForbidHttpResult>> GetAsync(
+    private static async Task<Results<Ok<TripDetailDto>, NotFound, ForbidHttpResult>> GetAsync(
         Guid id,
         TripAuthorizationService authz,
+        ITripRepository trips,
         CurrentUser currentUser,
         CancellationToken ct)
     {
-        var trip = await authz.AuthorizeAsync(id, currentUser.UserIdGuid, ct).ConfigureAwait(false);
-        if (trip is null)
+        var authorized = await authz.AuthorizeAsync(id, currentUser.UserIdGuid, ct).ConfigureAwait(false);
+        if (authorized is null)
         {
             return TypedResults.NotFound();
         }
-        return TypedResults.Ok(trip.ToDto());
+        // AuthorizeAsync only loads the trip itself — re-fetch with participants + candidate
+        // nodes so the planner / driver / cost-split views render in one round-trip.
+        var full = await trips.GetWithParticipantsAsync(id, ct).ConfigureAwait(false);
+        if (full is null)
+        {
+            return TypedResults.NotFound();
+        }
+        return TypedResults.Ok(full.ToDetailDto());
     }
 
     private static async Task<Results<NoContent, NotFound>> DeleteAsync(
