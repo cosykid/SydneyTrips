@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Trips.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Trips.Core\Trips.Core.csproj" />
     <ProjectReference Include="..\Trips.Data\Trips.Data.csproj" />
     <ProjectReference Include="..\Trips.Optimisation\Trips.Optimisation.csproj" />

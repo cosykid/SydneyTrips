@@ -17,6 +17,8 @@ using Trips.Api.Validation;
 using Trips.Core.Abstractions;
 using Trips.Core.Infrastructure;
 using Trips.Data;
+using Trips.Integrations;
+using Trips.Optimisation;
 
 const string DevCorsPolicy = "DevFrontend";
 
@@ -43,11 +45,11 @@ builder.Host.UseSerilog((ctx, sp, lc) =>
 builder.Services.AddTripsData(builder.Configuration);
 builder.Services.AddSingleton<IClock, SystemClock>();
 
-// requires WS2 ws2/integrations branch merged — once available, AddTripsIntegrations(builder.Configuration)
-//   will register the real ITfNswClient / IGoogleRoutesClient / IGeocodingClient implementations
-//   and override the stubs below via TryAdd semantics.
-// requires WS3 ws3/optimisation branch merged — once available, AddTripsOptimisation()
-//   will register the real ISolver implementations (OR-Tools + heuristic).
+// Integrations + Optimisation — real implementations register first so the
+// Stubs/ TryAdd fallbacks below only kick in if config is missing (e.g. unit tests).
+builder.Services.AddTripsIntegrations(builder.Configuration);
+builder.Services.AddTripsOptimisation();
+
 builder.Services.TryAddSingleton<ITfNswClient, StubTfNswClient>();
 builder.Services.TryAddSingleton<IGoogleRoutesClient, StubGoogleRoutesClient>();
 builder.Services.TryAddSingleton<IGeocodingClient, StubGeocodingClient>();

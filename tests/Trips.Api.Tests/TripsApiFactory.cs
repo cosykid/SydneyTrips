@@ -2,11 +2,15 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
+using Trips.Api.Stubs;
+using Trips.Core.Abstractions;
 using Trips.Core.Contracts;
 using Trips.Data;
 
@@ -55,6 +59,20 @@ public sealed class TripsApiFactory : WebApplicationFactory<Program>, IAsyncLife
                 ["Auth:Audience"] = "SydneyTrips.Tests.Client",
                 ["Optimisation:MaxConcurrent"] = "2",
             });
+        });
+        builder.ConfigureTestServices(services =>
+        {
+            // Replace external integrations + solver with stubs: API tests cover the endpoint surface
+            // and runner glue, not the optimisation core or live TfNSW/Google calls. The real services
+            // would otherwise block on retries against unreachable APIs (no API keys in CI).
+            services.RemoveAll<ISolver>();
+            services.RemoveAll<ITfNswClient>();
+            services.RemoveAll<IGoogleRoutesClient>();
+            services.RemoveAll<IGeocodingClient>();
+            services.AddSingleton<ISolver, StubSolver>();
+            services.AddSingleton<ITfNswClient, StubTfNswClient>();
+            services.AddSingleton<IGoogleRoutesClient, StubGoogleRoutesClient>();
+            services.AddSingleton<IGeocodingClient, StubGeocodingClient>();
         });
     }
 
