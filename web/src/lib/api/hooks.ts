@@ -17,9 +17,11 @@ import type {
   ParetoResponse,
   Participant,
   RunSolutionResponse,
+  Solution,
   Trip,
   TripSummary,
   Uuid,
+  WhatIfRequest,
 } from "./schema";
 
 export const tripKeys = {
@@ -162,5 +164,48 @@ export function useCostSplit(tripId: Uuid | undefined): UseQueryResult<CostSplit
     queryKey: tripId ? tripKeys.costSplit(tripId) : ["trips", "cost-split", "_"],
     queryFn: () => apiFetch<CostSplit>(`/trips/${tripId}/cost-split`),
     enabled: Boolean(tripId),
+  });
+}
+
+// Fetches the locked solution for a trip. WS7 may surface this as a single
+// endpoint; until then we look it up by solution id which the API exposes on
+// the trip resource. Returns `undefined` when nothing is locked yet.
+export function useLockedSolution(
+  tripId: Uuid | undefined,
+): UseQueryResult<Solution | null, ApiError> {
+  return useQuery<Solution | null, ApiError>({
+    queryKey: tripId ? [...tripKeys.detail(tripId), "locked-solution"] : ["locked-solution", "_"],
+    queryFn: async (): Promise<Solution | null> => {
+      // Try the dedicated endpoint first; fall back to the legacy path if the
+      // API hasn't shipped it yet. Both shapes are tolerated.
+      try {
+        return await apiFetch<Solution>(`/trips/${tripId}/solution`);
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    enabled: Boolean(tripId),
+  });
+}
+
+interface WhatIfVars {
+  tripId: Uuid;
+  body: WhatIfRequest;
+}
+
+interface WhatIfResponse {
+  runId: Uuid;
+}
+
+export function useWhatIf(): UseMutationResult<WhatIfResponse, ApiError, WhatIfVars> {
+  return useMutation({
+    mutationFn: ({ tripId, body }) =>
+      apiFetch<WhatIfResponse>(`/trips/${tripId}/whatif`, {
+        method: "POST",
+        body,
+      }),
   });
 }

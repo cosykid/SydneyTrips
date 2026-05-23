@@ -17,7 +17,21 @@ export default async function TripDetailPage({ params }: Params): Promise<React.
         <Button variant="ghost" size="sm" render={<Link href="/trips" />} nativeButton={false}>
           ← All trips
         </Button>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            render={<Link href={`/trips/${id}/driver`} />}
+            nativeButton={false}
+          >
+            Driver view
+          </Button>
+          <Button
+            variant="outline"
+            render={<Link href={`/trips/${id}/passenger`} />}
+            nativeButton={false}
+          >
+            Passenger view
+          </Button>
           <Button
             variant="outline"
             render={<Link href={`/trips/${id}/cost`} />}

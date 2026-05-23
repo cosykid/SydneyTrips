@@ -10,6 +10,7 @@ export interface ParetoCarouselProps {
   selectedSolutionId?: string;
   onSelect: (id: string) => void;
   onLock: (id: string) => void;
+  onWhatIf?: (solution: Solution) => void;
   isLocking?: boolean;
   lockedSolutionId?: string;
 }
@@ -29,6 +30,7 @@ export function ParetoCarousel({
   selectedSolutionId,
   onSelect,
   onLock,
+  onWhatIf,
   isLocking,
   lockedSolutionId,
 }: ParetoCarouselProps): React.JSX.Element {
@@ -70,18 +72,32 @@ export function ParetoCarousel({
               <p className="text-muted-foreground text-xs">No solution returned for this tab.</p>
             )}
             {t.solution ? (
-              <Button
-                type="button"
-                className="w-full"
-                onClick={() => onLock(t.solution!.id)}
-                disabled={isLocking || lockedSolutionId === t.solution.id}
-              >
-                {lockedSolutionId === t.solution.id
-                  ? "Locked"
-                  : isLocking
-                    ? "Locking…"
-                    : "Lock this solution"}
-              </Button>
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => onLock(t.solution!.id)}
+                  disabled={isLocking || lockedSolutionId === t.solution.id}
+                >
+                  {lockedSolutionId === t.solution.id
+                    ? "Locked"
+                    : isLocking
+                      ? "Locking…"
+                      : "Lock this solution"}
+                </Button>
+                {onWhatIf && lockedSolutionId === t.solution.id ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => onWhatIf(t.solution!)}
+                    data-testid="what-if-button"
+                  >
+                    What if…
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </TabsContent>
         ))}

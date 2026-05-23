@@ -181,3 +181,37 @@ export interface CostSplit {
     breakdown: { fuel: number; tolls: number };
   }>;
 }
+
+export interface WhatIfAddParticipant {
+  displayName: string;
+  email?: string;
+  role: ParticipantRole;
+  originAddress: string;
+  origin?: LatLng;
+  seatsAvailable?: number;
+  prefs?: ParticipantPrefs;
+}
+
+export interface WhatIfRequest {
+  /** Participants to remove from the existing locked solution. */
+  dropParticipantIds: Uuid[];
+  /** New participants to add (will be geocoded server-side if no point given). */
+  addParticipants: WhatIfAddParticipant[];
+  /** Optional new objective weights. */
+  newWeights?: ObjectiveWeights;
+  /** When true, the solver warm-starts from the current locked solution to
+   * minimise churn (kept stops stay put where possible). */
+  repair?: boolean;
+}
+
+export interface CostSplitFuelEconomy {
+  /** Cost per litre in A$. */
+  fuelPricePerLitre: number;
+  /** Fuel economy in litres per 100 km. */
+  litresPer100Km: number;
+}
+
+export const DEFAULT_COST_INPUTS: CostSplitFuelEconomy = {
+  fuelPricePerLitre: 2.1,
+  litresPer100Km: 8.5,
+};

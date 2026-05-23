@@ -18,6 +18,8 @@ import { usePlanStore } from "@/lib/store";
 import { WeightSliders } from "./WeightSliders";
 import { ParetoCarousel } from "./ParetoCarousel";
 import type { PlanMapProps } from "./PlanMap";
+import { WhatIfDialog } from "@/components/whatif/WhatIfDialog";
+import type { Solution } from "@/lib/api/schema";
 
 // Mapbox-gl reaches for `window` at module load, so render the map only on
 // the client. Loading skeleton keeps SSR happy.
@@ -58,6 +60,8 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
   const pareto = usePareto(tripId, activeRunId);
 
   const [hasOptimisedOnce, setHasOptimisedOnce] = useState(false);
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
+  const [whatIfSolution, setWhatIfSolution] = useState<Solution | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const data = trip.data;
@@ -194,6 +198,10 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
                 selectedSolutionId={selectedSolutionId}
                 onSelect={selectSolution}
                 onLock={onLock}
+                onWhatIf={(s) => {
+                  setWhatIfSolution(s);
+                  setWhatIfOpen(true);
+                }}
                 isLocking={lock.isPending}
                 lockedSolutionId={data.lockedSolutionId}
               />
@@ -206,6 +214,18 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
           ) : null}
         </div>
       </aside>
+      {whatIfSolution ? (
+        <WhatIfDialog
+          open={whatIfOpen}
+          onOpenChange={(o) => {
+            setWhatIfOpen(o);
+            if (!o) setWhatIfSolution(null);
+          }}
+          tripId={tripId}
+          participants={data.participants}
+          originalSolution={whatIfSolution}
+        />
+      ) : null}
     </div>
   );
 }
