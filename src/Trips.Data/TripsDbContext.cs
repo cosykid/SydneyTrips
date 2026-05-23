@@ -1,14 +1,19 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Trips.Core.Domain;
 
 namespace Trips.Data;
 
 /// <summary>
-/// Application <see cref="DbContext"/>. Picks up entity configurations from the assembly via
+/// Application <see cref="DbContext"/>. Inherits from <see cref="IdentityDbContext{TUser}"/>
+/// so ASP.NET Core Identity tables live in the same database as the domain tables.
+///
+/// Picks up entity configurations from the assembly via
 /// <see cref="ModelBuilder.ApplyConfigurationsFromAssembly"/>; configurations live in
 /// <c>Trips.Data/Configurations</c>.
 /// </summary>
-public sealed class TripsDbContext : DbContext
+public class TripsDbContext : IdentityDbContext<IdentityUser>
 {
     public TripsDbContext(DbContextOptions<TripsDbContext> options) : base(options)
     {
@@ -25,6 +30,7 @@ public sealed class TripsDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
         modelBuilder.HasPostgresExtension("postgis");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TripsDbContext).Assembly);
     }
