@@ -1,0 +1,39 @@
+name: sydneytrips
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: sydneytrips-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trips
+      POSTGRES_PASSWORD: trips
+      POSTGRES_DB: trips
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trips -d trips"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sydneytrips-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pg-data:
+  redis-data:
