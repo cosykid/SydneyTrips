@@ -166,6 +166,7 @@ app.MapTrips();
 app.MapParticipants();
 app.MapOptimisation();
 app.MapAdvanced();
+app.MapCalendar();
 
 app.Run();
 

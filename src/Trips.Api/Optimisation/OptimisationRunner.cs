@@ -103,6 +103,31 @@ public sealed class OptimisationRunner : BackgroundService
         }
 
         var input = BuildSolverInput(trip, run);
+        // Warm-start support: when repairHint=true and the trip has a locked solution, fetch the
+        // LockedContext and apply an empty delta so the SolverInput carries a warm-start hint. This
+        // is what the what-if endpoint relies on for minimal-disruption re-optimisation. We
+        // intentionally apply the empty delta (no drops/adds, original weights) here because the
+        // current OptimisationJob contract doesn't carry a delta payload — the caller can re-issue
+        // with explicit weights via OptimiseRequest if they want a different objective.
+        if (job.RepairHint && trip.LockedSolutionId is { } lockedId)
+        {
+            var lockedContexts = sp.GetService<ILockedContextRepository>();
+            if (lockedContexts is not null)
+            {
+                var ctx = await lockedContexts.GetByIdAsync(lockedId, ct).ConfigureAwait(false);
+                if (ctx is not null)
+                {
+                    input = Trips.Optimisation.WhatIf.WhatIfService.ApplyDelta(ctx, new Trips.Optimisation.WhatIf.WhatIfDelta(
+                        DropParticipantIds: null,
+                        AddParticipants: null,
+                        NewWeights: run.Weights));
+                    // ApplyDelta gives us a fresh RunId; reset it to the job's run id so the produced
+                    // solution belongs to the correct OptimisationRun row.
+                    input = input with { RunId = run.Id, TripId = trip.Id };
+                    _logger.LogInformation("Run {Run}: warm-start hint applied from locked solution {Solution}", job.RunId, lockedId);
+                }
+            }
+        }
         var sw = Stopwatch.StartNew();
         var solution = await solver.SolveAsync(input, ct).ConfigureAwait(false);
         sw.Stop();

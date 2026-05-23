@@ -37,6 +37,8 @@ public static class DependencyInjection
         services.AddScoped<IParticipantRepository, ParticipantRepository>();
         services.AddScoped<IOptimisationRunRepository, OptimisationRunRepository>();
         services.AddScoped<ITripEventRepository, TripEventRepository>();
+        services.AddScoped<ISolutionRepository, SolutionRepository>();
+        services.AddScoped<ILockedContextRepository, LockedContextRepository>();
 
         return services;
     }
