@@ -609,6 +609,54 @@
             "description": "Not Found"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Advanced"
+        ],
+        "operationId": "CostSplitWithInputs",
+        "parameters": [
+          {
+            "name": "tripId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CostSplitInputsDto"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostSplitResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
       }
     },
     "/trips/{tripId}/return-leg": {
@@ -628,13 +676,117 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReturnLegRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "202": {
-            "description": "Accepted",
+          "200": {
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnqueueRunResponse"
+                  "$ref": "#/components/schemas/ReturnLegResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/participants/{participantId}/calendar.ics": {
+      "get": {
+        "tags": [
+          "Calendar"
+        ],
+        "operationId": "ParticipantCalendar",
+        "parameters": [
+          {
+            "name": "tripId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "participantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/events": {
+      "get": {
+        "tags": [
+          "Events"
+        ],
+        "operationId": "ListTripEvents",
+        "parameters": [
+          {
+            "name": "tripId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TripEventDto"
+                  }
                 }
               }
             }
@@ -746,8 +898,9 @@
         "required": [
           "participantId",
           "displayName",
-          "share",
-          "kilometres"
+          "fuelShare",
+          "tollShare",
+          "total"
         ],
         "type": "object",
         "properties": {
@@ -758,7 +911,7 @@
           "displayName": {
             "type": "string"
           },
-          "share": {
+          "fuelShare": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
             "type": [
               "number",
@@ -766,7 +919,15 @@
             ],
             "format": "double"
           },
-          "kilometres": {
+          "tollShare": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "total": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
             "type": [
               "number",
@@ -776,13 +937,53 @@
           }
         }
       },
+      "CostSplitInputsDto": {
+        "required": [
+          "fuelPricePerLitre",
+          "fuelEconomyLPer100Km",
+          "tolls"
+        ],
+        "type": "object",
+        "properties": {
+          "fuelPricePerLitre": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "fuelEconomyLPer100Km": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "tolls": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TollSegmentDto"
+            }
+          }
+        }
+      },
       "CostSplitResponse": {
         "required": [
           "tripId",
           "solutionId",
           "entries",
           "totalCost",
-          "todo"
+          "totalFuel",
+          "totalTolls",
+          "fuelPricePerLitre",
+          "fuelEconomyLPer100Km"
         ],
         "type": "object",
         "properties": {
@@ -811,11 +1012,37 @@
             ],
             "format": "double"
           },
-          "todo": {
+          "totalFuel": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
             "type": [
-              "null",
+              "number",
               "string"
-            ]
+            ],
+            "format": "double"
+          },
+          "totalTolls": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "fuelPricePerLitre": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "fuelEconomyLPer100Km": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -920,6 +1147,9 @@
             "format": "uuid"
           }
         }
+      },
+      "EventKind": {
+        "type": "integer"
       },
       "LockSolutionRequest": {
         "required": [
@@ -1285,6 +1515,69 @@
           }
         }
       },
+      "ReturnLegRequest": {
+        "required": [
+          "requests"
+        ],
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnRequestDto"
+            }
+          }
+        }
+      },
+      "ReturnLegResponse": {
+        "required": [
+          "solutions"
+        ],
+        "type": "object",
+        "properties": {
+          "solutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SolutionDto"
+            }
+          }
+        }
+      },
+      "ReturnRequestDto": {
+        "required": [
+          "participantId",
+          "desiredDeparture",
+          "dropoffLongitude",
+          "dropoffLatitude"
+        ],
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "desiredDeparture": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dropoffLongitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "dropoffLatitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "SolutionDto": {
         "required": [
           "id",
@@ -1395,6 +1688,32 @@
           }
         }
       },
+      "TollSegmentDto": {
+        "required": [
+          "fromStopId",
+          "toStopId",
+          "amount"
+        ],
+        "type": "object",
+        "properties": {
+          "fromStopId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toStopId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "TripDto": {
         "required": [
           "id",
@@ -1466,6 +1785,67 @@
           }
         }
       },
+      "TripEventDto": {
+        "required": [
+          "id",
+          "tripId",
+          "kind",
+          "actorId",
+          "longitude",
+          "latitude",
+          "timestamp",
+          "payloadJson"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tripId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          },
+          "actorId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "longitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "latitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payloadJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "WhatIfRequest": {
         "required": [
           "dropParticipantIds",
@@ -1525,6 +1905,12 @@
     },
     {
       "name": "Advanced"
+    },
+    {
+      "name": "Calendar"
+    },
+    {
+      "name": "Events"
     }
   ]
 }

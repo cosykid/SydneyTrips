@@ -13,13 +13,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ignoreUnauthorized: true,
     });
     const sealed = await sealSession({
-      apiJwt: auth.token,
-      userId: auth.user.id,
-      email: auth.user.email,
-      displayName: auth.user.displayName,
+      apiJwt: auth.accessToken,
+      userId: auth.userId,
+      email: auth.email,
+      displayName: auth.displayName,
       expiresAt: auth.expiresAt,
     });
-    const res = NextResponse.json({ user: auth.user }, { status: 201 });
+    const user = { id: auth.userId, email: auth.email, displayName: auth.displayName };
+    const res = NextResponse.json({ user }, { status: 201 });
     const maxAge = Math.max(0, Math.floor((new Date(auth.expiresAt).getTime() - Date.now()) / 1000));
     res.cookies.set(SESSION_COOKIE, sealed, {
       httpOnly: true,

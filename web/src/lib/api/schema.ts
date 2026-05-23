@@ -23,13 +23,13 @@ export interface AuthRegisterRequest {
 }
 
 export interface AuthResponse {
-  token: string;
+  /** API returns this as `accessToken` (see Trips.Core.Contracts.AuthTokenResponse). */
+  accessToken: string;
+  refreshToken: string;
   expiresAt: IsoDateTime;
-  user: {
-    id: Uuid;
-    email: string;
-    displayName: string;
-  };
+  userId: Uuid;
+  email: string;
+  displayName: string;
 }
 
 export type TripStatus = "draft" | "planned" | "in_progress" | "completed";
