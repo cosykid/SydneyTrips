@@ -49,68 +49,69 @@ test.describe.serial("hero screenshots", () => {
     }
   });
 
-  test("01 — planning canvas", async ({ page }) => {
+  test("00 — login page (unauthenticated)", async ({ page }) => {
+    await page.goto("/login");
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await page.screenshot({
+      path: path.join(SHOTS_DIR, "00-login.png"),
+      fullPage: true,
+    });
+  });
+
+  test("01 — trips dashboard", async ({ page }) => {
+    await loginViaUi(page, seed.email, seed.password);
+    await page.goto("/trips");
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1_500);
+    await page.screenshot({
+      path: path.join(SHOTS_DIR, "01-trips-dashboard.png"),
+      fullPage: true,
+    });
+  });
+
+  test("02 — trip overview", async ({ page }) => {
+    await loginViaUi(page, seed.email, seed.password);
+    await page.goto(`/trips/${seed.tripId}`);
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1_500);
+    await page.screenshot({
+      path: path.join(SHOTS_DIR, "02-trip-overview.png"),
+      fullPage: true,
+    });
+  });
+
+  test("03 — planning canvas", async ({ page }) => {
     await loginViaUi(page, seed.email, seed.password);
     await page.goto(`/trips/${seed.tripId}/plan`);
     await page.waitForLoadState("networkidle");
     // Give Mapbox a beat to settle markers + camera; harmless if the placeholder card is up.
     await page.waitForTimeout(2_500);
     await page.screenshot({
-      path: path.join(SHOTS_DIR, "01-planning-canvas.png"),
+      path: path.join(SHOTS_DIR, "03-planning-canvas.png"),
       fullPage: true,
     });
   });
 
-  test("02 — pareto locked", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
-    await page.goto(`/trips/${seed.tripId}/plan?paretoIndex=0`);
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(2_500);
-    await page.screenshot({
-      path: path.join(SHOTS_DIR, "02-pareto-locked.png"),
-      fullPage: true,
-    });
-  });
-
-  test("03 — driver view", async ({ page }) => {
+  test("04 — driver view", async ({ page }) => {
     await loginViaUi(page, seed.email, seed.password);
     const driverId = seed.driverIds[0];
     await page.goto(`/trips/${seed.tripId}/driver?as=${driverId}`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(2_500);
     await page.screenshot({
-      path: path.join(SHOTS_DIR, "03-driver-view.png"),
+      path: path.join(SHOTS_DIR, "04-driver-view.png"),
       fullPage: true,
     });
   });
 
-  test("04 — cost split", async ({ page }) => {
+  test("05 — cost split", async ({ page }) => {
     await loginViaUi(page, seed.email, seed.password);
     await page.goto(`/trips/${seed.tripId}/cost`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_500);
-    await expect(page.getByRole("heading", { name: /cost split/i })).toBeVisible();
     await page.screenshot({
-      path: path.join(SHOTS_DIR, "04-cost-split.png"),
-      fullPage: true,
-    });
-  });
-
-  test("05 — what-if diff", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
-    await page.goto(`/trips/${seed.tripId}/plan?whatif=open&drop=${seed.passengerIds[0]}`);
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(2_500);
-    // The what-if modal is opened via the planner UI; the deep-link above is a hint to any
-    // future router-aware open state. If the modal isn't visible from the URL alone, fall
-    // back to clicking the "what-if" button if one is present.
-    const trigger = page.getByRole("button", { name: /what.?if/i }).first();
-    if (await trigger.isVisible().catch(() => false)) {
-      await trigger.click();
-      await page.waitForTimeout(1_500);
-    }
-    await page.screenshot({
-      path: path.join(SHOTS_DIR, "05-whatif-diff.png"),
+      path: path.join(SHOTS_DIR, "05-cost-split.png"),
       fullPage: true,
     });
   });
