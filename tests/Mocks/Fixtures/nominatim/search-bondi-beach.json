@@ -1,0 +1,16 @@
+[
+  {
+    "place_id": 246840192,
+    "licence": "Data © OpenStreetMap contributors",
+    "osm_type": "node",
+    "osm_id": 1052874520,
+    "lat": "-33.8908",
+    "lon": "151.2796",
+    "class": "leisure",
+    "type": "park",
+    "place_rank": 30,
+    "importance": 0.65,
+    "display_name": "Bondi Beach, Council of the City of Sydney, Sydney, New South Wales, 2026, Australia",
+    "boundingbox": ["-33.8920", "-33.8896", "151.2782", "151.2810"]
+  }
+]

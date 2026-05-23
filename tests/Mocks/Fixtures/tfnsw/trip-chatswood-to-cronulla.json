@@ -1,0 +1,63 @@
+{
+  "version": "10.2.1.42",
+  "systemMessages": [],
+  "journeys": [
+    {
+      "rating": 0,
+      "isAdditional": false,
+      "interchanges": 1,
+      "legs": [
+        {
+          "duration": 1620,
+          "origin": {
+            "id": "204020",
+            "name": "Chatswood Station",
+            "type": "stop",
+            "coord": [151.1832, -33.7969]
+          },
+          "destination": {
+            "id": "200080",
+            "name": "Town Hall Station",
+            "type": "stop",
+            "coord": [151.2073, -33.8730]
+          },
+          "transportation": {
+            "id": "T1",
+            "name": "North Shore Line",
+            "disassembledName": "T1",
+            "number": "T1",
+            "product": {
+              "name": "Train",
+              "class": 1
+            }
+          }
+        },
+        {
+          "duration": 2700,
+          "origin": {
+            "id": "200080",
+            "name": "Town Hall Station",
+            "type": "stop",
+            "coord": [151.2073, -33.8730]
+          },
+          "destination": {
+            "id": "220020",
+            "name": "Cronulla Station",
+            "type": "stop",
+            "coord": [151.1525, -34.0571]
+          },
+          "transportation": {
+            "id": "T4",
+            "name": "Eastern Suburbs & Illawarra Line",
+            "disassembledName": "T4",
+            "number": "T4",
+            "product": {
+              "name": "Train",
+              "class": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

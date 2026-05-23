@@ -1,0 +1,37 @@
+{
+  "version": "10.2.1.42",
+  "locations": [
+    {
+      "id": "200060",
+      "name": "Town Hall Station",
+      "type": "stop",
+      "coord": [151.2073, -33.8730],
+      "distance": 12,
+      "productClasses": [1]
+    },
+    {
+      "id": "200070",
+      "name": "St James Station",
+      "type": "stop",
+      "coord": [151.2114, -33.8694],
+      "distance": 380,
+      "productClasses": [1]
+    },
+    {
+      "id": "200061",
+      "name": "QVB Bus Stop",
+      "type": "stop",
+      "coord": [151.2065, -33.8717],
+      "distance": 165,
+      "productClasses": [5]
+    },
+    {
+      "id": "200120",
+      "name": "Wynyard Station",
+      "type": "stop",
+      "coord": [151.2058, -33.8657],
+      "distance": 720,
+      "productClasses": [1, 5]
+    }
+  ]
+}

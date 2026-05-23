@@ -1,0 +1,53 @@
+{
+  "version": "10.2.1.42",
+  "stopEvents": [
+    {
+      "isRealtimeControlled": true,
+      "departureTimePlanned": "2025-01-15T08:00:00Z",
+      "departureTimeEstimated": "2025-01-15T08:00:30Z",
+      "transportation": {
+        "id": "T4",
+        "name": "Eastern Suburbs & Illawarra Line",
+        "number": "T4",
+        "product": {
+          "name": "Train",
+          "class": 1
+        },
+        "properties": {
+          "realtimeTripId": "T4-873-2025-01-15"
+        }
+      }
+    },
+    {
+      "isRealtimeControlled": true,
+      "departureTimePlanned": "2025-01-15T08:04:00Z",
+      "departureTimeEstimated": "2025-01-15T08:05:00Z",
+      "transportation": {
+        "id": "T2",
+        "name": "Inner West & Leppington Line",
+        "number": "T2",
+        "product": {
+          "name": "Train",
+          "class": 1
+        },
+        "properties": {
+          "realtimeTripId": "T2-128-2025-01-15"
+        }
+      }
+    },
+    {
+      "isRealtimeControlled": false,
+      "departureTimePlanned": "2025-01-15T08:07:00Z",
+      "departureTimeEstimated": "2025-01-15T08:07:00Z",
+      "transportation": {
+        "id": "T3",
+        "name": "Bankstown Line",
+        "number": "T3",
+        "product": {
+          "name": "Train",
+          "class": 1
+        }
+      }
+    }
+  ]
+}
