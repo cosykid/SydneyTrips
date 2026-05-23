@@ -13,6 +13,7 @@ using Trips.Api.Stubs;
 using Trips.Core.Abstractions;
 using Trips.Core.Contracts;
 using Trips.Data;
+using Trips.Optimisation.OrTools;
 
 namespace Trips.Api.Tests;
 
@@ -94,12 +95,37 @@ public sealed class TripsApiFactory : WebApplicationFactory<Program>, IAsyncLife
     }
 
     /// <summary>Register a user and return an authenticated HTTP client.</summary>
-    public async Task<(HttpClient Client, AuthTokenResponse Tokens)> CreateAuthenticatedClientAsync(
+    public Task<(HttpClient Client, AuthTokenResponse Tokens)> CreateAuthenticatedClientAsync(
         string email = "alice@example.com",
         string password = "password123",
         string displayName = "Alice")
+        => RegisterAndAuthenticateAsync(CreateClient(), email, password, displayName);
+
+    /// <summary>
+    /// Returns a sibling factory that swaps the stubbed <see cref="ISolver"/> back to the real
+    /// <see cref="OrToolsSolver"/> while keeping the rest of the test wiring (postgres container,
+    /// HTTP-client stubs for TfNSW/Google/geocoding) intact. Use this to exercise the end-to-end
+    /// runner → solver → persistence path; the default factory's stub solver short-circuits the
+    /// CP-SAT model entirely.
+    /// </summary>
+    public WebApplicationFactory<Program> WithRealSolver()
     {
-        var client = CreateClient();
+        return WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ISolver>();
+                services.AddSingleton<ISolver>(sp => sp.GetRequiredService<OrToolsSolver>());
+            });
+        });
+    }
+
+    internal static async Task<(HttpClient Client, AuthTokenResponse Tokens)> RegisterAndAuthenticateAsync(
+        HttpClient client,
+        string email,
+        string password,
+        string displayName)
+    {
         var register = new RegisterRequest(email, password, displayName);
         var response = await client.PostAsJsonAsync("/auth/register", register).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();

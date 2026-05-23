@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\Trips.Api\Trips.Api.csproj" />
     <ProjectReference Include="..\..\src\Trips.Core\Trips.Core.csproj" />
     <ProjectReference Include="..\..\src\Trips.Data\Trips.Data.csproj" />
+    <ProjectReference Include="..\..\src\Trips.Optimisation\Trips.Optimisation.csproj" />
   </ItemGroup>
 
 </Project>
