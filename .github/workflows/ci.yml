@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  backend:
+    name: .NET build + test
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +35,141 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: backend-test-results
           path: TestResults/**/*.trx
+          if-no-files-found: warn
+
+  frontend:
+    name: Web lint + typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time fallback; Next.js doesn't need a real API to compile.
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:5000
+          AUTH_SECRET: ci-only-placeholder-needs-32-chars-min-pad
+
+      - name: Unit tests
+        run: npm run test
+
+  e2e:
+    name: Playwright E2E (best-effort)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    # The end-to-end harness needs docker-compose + the .NET API + the Next.js dev server.
+    # We mark it continue-on-error so a transient seed-script glitch doesn't block PRs;
+    # the goal of running it in CI is signal, not gating, while WS8 polishes the path.
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: web
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: trips
+          POSTGRES_PASSWORD: trips
+          POSTGRES_DB: trips
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U trips -d trips"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '23'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 10.0.4
+
+      - name: Apply migrations
+        working-directory: ${{ github.workspace }}
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef database update --project src/Trips.Data --startup-project src/Trips.Api
+
+      - name: Start Trips.Api
+        working-directory: ${{ github.workspace }}
+        run: |
+          nohup dotnet run --project src/Trips.Api --no-launch-profile > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5000/healthz; then break; fi
+            sleep 2
+          done
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Seed demo trip
+        working-directory: ${{ github.workspace }}
+        run: ./tests/seed/seed-demo.sh
+
+      - name: E2E
+        run: npm run test:e2e
+        env:
+          API_BASE_URL: http://localhost:5000
+          AUTH_SECRET: ci-only-placeholder-needs-32-chars-min-pad
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:5000
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: web/test-results/**/*
+          if-no-files-found: warn
+
+      - name: Upload API log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-log
+          path: /tmp/api.log
           if-no-files-found: warn
