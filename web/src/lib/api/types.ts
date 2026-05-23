@@ -237,7 +237,7 @@ export interface paths {
         };
         get: operations["CostSplit"];
         put?: never;
-        post?: never;
+        post: operations["CostSplitWithInputs"];
         delete?: never;
         options?: never;
         head?: never;
@@ -254,6 +254,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["ReturnLeg"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{tripId}/participants/{participantId}/calendar.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ParticipantCalendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{tripId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ListTripEvents"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -290,9 +322,18 @@ export interface components {
             participantId: string;
             displayName: string;
             /** Format: double */
-            share: number | string;
+            fuelShare: number | string;
             /** Format: double */
-            kilometres: number | string;
+            tollShare: number | string;
+            /** Format: double */
+            total: number | string;
+        };
+        CostSplitInputsDto: {
+            /** Format: double */
+            fuelPricePerLitre: null | number | string;
+            /** Format: double */
+            fuelEconomyLPer100Km: null | number | string;
+            tolls: null | components["schemas"]["TollSegmentDto"][];
         };
         CostSplitResponse: {
             /** Format: uuid */
@@ -302,7 +343,14 @@ export interface components {
             entries: components["schemas"]["CostSplitEntry"][];
             /** Format: double */
             totalCost: number | string;
-            todo: null | string;
+            /** Format: double */
+            totalFuel: number | string;
+            /** Format: double */
+            totalTolls: number | string;
+            /** Format: double */
+            fuelPricePerLitre: number | string;
+            /** Format: double */
+            fuelEconomyLPer100Km: number | string;
         };
         CreateTripRequest: {
             name: string;
@@ -333,6 +381,7 @@ export interface components {
             /** Format: uuid */
             runId: string;
         };
+        EventKind: number;
         LockSolutionRequest: {
             /** Format: uuid */
             runId: string;
@@ -424,6 +473,22 @@ export interface components {
             password: string;
             displayName: string;
         };
+        ReturnLegRequest: {
+            requests: components["schemas"]["ReturnRequestDto"][];
+        };
+        ReturnLegResponse: {
+            solutions: components["schemas"]["SolutionDto"][];
+        };
+        ReturnRequestDto: {
+            /** Format: uuid */
+            participantId: string;
+            /** Format: date-time */
+            desiredDeparture: string;
+            /** Format: double */
+            dropoffLongitude: number | string;
+            /** Format: double */
+            dropoffLatitude: number | string;
+        };
         SolutionDto: {
             /** Format: uuid */
             id: string;
@@ -452,6 +517,14 @@ export interface components {
             estimatedArrival: string;
             pickups: string[];
         };
+        TollSegmentDto: {
+            /** Format: uuid */
+            fromStopId: string;
+            /** Format: uuid */
+            toStopId: string;
+            /** Format: double */
+            amount: number | string;
+        };
         TripDto: {
             /** Format: uuid */
             id: string;
@@ -473,6 +546,22 @@ export interface components {
             createdAt: string;
             /** Format: uuid */
             lockedSolutionId: null | string;
+        };
+        TripEventDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tripId: string;
+            kind: components["schemas"]["EventKind"];
+            /** Format: uuid */
+            actorId: null | string;
+            /** Format: double */
+            longitude: null | number | string;
+            /** Format: double */
+            latitude: null | number | string;
+            /** Format: date-time */
+            timestamp: string;
+            payloadJson: null | string;
         };
         WhatIfRequest: {
             dropParticipantIds: null | string[];
@@ -961,6 +1050,39 @@ export interface operations {
             };
         };
     };
+    CostSplitWithInputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": null | components["schemas"]["CostSplitInputsDto"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostSplitResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ReturnLeg: {
         parameters: {
             query?: never;
@@ -970,15 +1092,80 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": null | components["schemas"]["ReturnLegRequest"];
+            };
+        };
         responses: {
-            /** @description Accepted */
-            202: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnqueueRunResponse"];
+                    "application/json": components["schemas"]["ReturnLegResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ParticipantCalendar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+                participantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ListTripEvents: {
+        parameters: {
+            query?: {
+                since?: string;
+            };
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEventDto"][];
                 };
             };
             /** @description Not Found */
