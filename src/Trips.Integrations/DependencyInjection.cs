@@ -52,7 +52,17 @@ public static class DependencyInjection
             .ValidateOnStart();
 
         AddRedisCache(services, configuration);
-        AddTfNsw(services);
+        // Only wire the live TfNSW client when there's an API key to call it with. Otherwise
+        // every TripPlan/Coord request would 401, the catch in ParticipantCandidateNodeService
+        // would swallow it, and we'd quietly degrade to Home-only candidates — which is exactly
+        // what produces "no PT, everyone picked up at their doorstep" in local dev. Leaving
+        // ITfNswClient unregistered here lets Program.cs's TryAdd fall through to the stub,
+        // which generates plausible PT-bearing candidates for development.
+        var tfnswKey = configuration.GetSection(TfNswOptions.SectionName)["ApiKey"];
+        if (!string.IsNullOrWhiteSpace(tfnswKey))
+        {
+            AddTfNsw(services);
+        }
         AddGoogleRoutes(services);
         AddGeocoding(services, configuration);
 

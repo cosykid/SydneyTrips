@@ -180,12 +180,36 @@ interface OptimiseVars {
   body: OptimiseRequest;
 }
 
+/**
+ * Translate the FE's user-friendly weight names to the wire shape the API expects.
+ *
+ * Without this mapping every slider but Fair sharing is silently ignored: the FE was sending
+ * `drivingTime`/`stops`/`walking` but ObjectiveWeightsDto on the backend expects
+ * `driveTime`/`stopCount`/`walkAndPt`. ASP.NET's JSON binder zeroes any field it doesn't
+ * recognise, so the solver received all-zero weights and every slider movement was a no-op.
+ *
+ * `arrivalSpread` isn't surfaced as a slider — kept at 0, matching the BE presets used in
+ * the integration-test fixture.
+ */
+function toApiWeights(w: OptimiseRequest["weights"]): components["schemas"]["ObjectiveWeightsDto"] {
+  return {
+    driveTime: w.drivingTime,
+    stopCount: w.stops,
+    walkAndPt: w.walking,
+    arrivalSpread: 0,
+    fairness: w.fairness,
+  };
+}
+
 export function useOptimise(): UseMutationResult<{ runId: Uuid }, ApiError, OptimiseVars> {
   return useMutation({
     mutationFn: ({ tripId, body }) =>
       apiFetch<{ runId: Uuid }>(`/trips/${tripId}/optimise`, {
         method: "POST",
-        body,
+        body: {
+          weights: toApiWeights(body.weights),
+          ...(body.seed !== undefined ? { seed: body.seed } : {}),
+        },
       }),
   });
 }
@@ -347,7 +371,12 @@ export function useWhatIf(): UseMutationResult<WhatIfResponse, ApiError, WhatIfV
     mutationFn: ({ tripId, body }) =>
       apiFetch<WhatIfResponse>(`/trips/${tripId}/whatif`, {
         method: "POST",
-        body,
+        // Same FE→API weight-name translation as the main optimise path, so weight overrides
+        // applied via "Try changes" actually take effect server-side.
+        body: {
+          ...body,
+          newWeights: body.newWeights ? toApiWeights(body.newWeights) : undefined,
+        },
       }),
   });
 }

@@ -2,22 +2,16 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import {
-  useTrip,
-  useOptimise,
-  useRun,
-  usePareto,
-  useLockSolution,
-} from "@/lib/api/hooks";
+import { useTrip, useOptimise, useRun, useLockSolution } from "@/lib/api/hooks";
 import { usePlanStore } from "@/lib/store";
 import { WeightSliders } from "./WeightSliders";
-import { ParetoCarousel } from "./ParetoCarousel";
+import { SolutionPanel } from "./SolutionPanel";
 import type { PlanMapProps } from "./PlanMap";
 import { WhatIfDialog } from "@/components/whatif/WhatIfDialog";
 import type { Solution } from "@/lib/api/schema";
@@ -52,11 +46,8 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     setViewState,
   } = usePlanStore();
   const activeRunId = usePlanStore((s) => s.byTrip[tripId]?.runId);
-  const selectedSolutionId = usePlanStore((s) => s.byTrip[tripId]?.solutionId);
   const setActiveRunId = usePlanStore((s) => s.setActiveRunId);
-  const selectSolution = usePlanStore((s) => s.selectSolution);
   const run = useRun({ tripId, runId: activeRunId, trip: trip.data ?? undefined });
-  const pareto = usePareto(tripId, activeRunId, trip.data ?? undefined);
 
   const [hasOptimisedOnce, setHasOptimisedOnce] = useState(false);
   const [whatIfOpen, setWhatIfOpen] = useState(false);
@@ -77,13 +68,6 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weights.drivingTime, weights.stops, weights.walking, weights.fairness]);
 
-  useEffect(() => {
-    const first = pareto.data?.solutions?.[0];
-    if (first && !selectedSolutionId) {
-      selectSolution(tripId, first.id);
-    }
-  }, [tripId, pareto.data, selectedSolutionId, selectSolution]);
-
   async function runOptimise(currentWeights = weights) {
     try {
       const { runId } = await optimise.mutateAsync({
@@ -91,7 +75,6 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
         body: { weights: currentWeights },
       });
       setActiveRunId(tripId, runId);
-      selectSolution(tripId, undefined);
       setHasOptimisedOnce(true);
     } catch (err) {
       toast.error("Could not start planning", {
@@ -111,22 +94,19 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     }
   }
 
-  const paretoSolutions = pareto.data?.solutions ?? undefined;
-  const hasPareto = Boolean(paretoSolutions && paretoSolutions.length);
+  // The selected solution is now simply whatever the current run produced — sliders re-trigger
+  // the run, the run yields a fresh solution, the map redraws. No Pareto carousel layer.
+  const selectedSolution = run.data?.solution;
+  const hasSolution = Boolean(selectedSolution);
 
   const computing =
     optimise.isPending ||
     run.data?.status === "pending" ||
     run.data?.status === "running" ||
     (Boolean(activeRunId) &&
-      !hasPareto &&
+      !hasSolution &&
       run.data?.status !== "failed" &&
       run.data?.status !== "cancelled");
-
-  const selectedSolution = useMemo(
-    () => paretoSolutions?.find((s) => s.id === selectedSolutionId),
-    [paretoSolutions, selectedSolutionId],
-  );
 
   if (trip.isLoading || !data) {
     return (
@@ -190,13 +170,11 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
           disabled={computing}
         />
 
-        {hasPareto && paretoSolutions ? (
+        {selectedSolution ? (
           <>
             <Separator className="my-4" />
-            <ParetoCarousel
-              solutions={paretoSolutions}
-              selectedSolutionId={selectedSolutionId}
-              onSelect={(id) => selectSolution(tripId, id)}
+            <SolutionPanel
+              solution={selectedSolution}
               onLock={onLock}
               onWhatIf={(s) => {
                 setWhatIfSolution(s);
@@ -222,7 +200,10 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
       >
         <LegendDot className="bg-success" /> Pickup
         <LegendDot className="bg-primary" /> People
-        <span className="text-amber-500">★</span> Destination
+        <LegendLine /> Car
+        <LegendDash color="#475569" /> Walk
+        <LegendDash color="#7C3AED" /> Public transport
+        <span className="text-[#EA4335]">📍</span> Destination
       </Card>
 
       {computing ? (
@@ -256,4 +237,37 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
 
 function LegendDot({ className }: { className: string }): React.JSX.Element {
   return <span className={`inline-block h-2 w-2 rounded-full ${className}`} />;
+}
+
+function LegendLine(): React.JSX.Element {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-[3px] w-4 rounded-full bg-slate-600"
+    />
+  );
+}
+
+function LegendDash({ color }: { color: string }): React.JSX.Element {
+  // Inline SVG so the dash pattern matches the map's GooglePolyline dashes. The colour is
+  // explicit because the legend now shows two different dashed strokes (walk vs PT).
+  return (
+    <svg
+      aria-hidden
+      width="18"
+      height="3"
+      viewBox="0 0 18 3"
+      className="inline-block"
+    >
+      <line
+        x1="0"
+        y1="1.5"
+        x2="18"
+        y2="1.5"
+        stroke={color}
+        strokeWidth="2"
+        strokeDasharray="3 3"
+      />
+    </svg>
+  );
 }

@@ -157,63 +157,12 @@ public sealed class OptimisationRunner : BackgroundService
         return solvers.FirstOrDefault(s => s.Kind == kind) ?? solvers[0];
     }
 
+    // SolverInput construction is shared with LockedContextRepository via SolverInputBuilder so
+    // both the cold-start and what-if paths feed the solver the same node layout — critically,
+    // they both feed *candidate nodes* as pickup points (not just participant homes), which is what
+    // lets passengers be picked up at transit hubs instead of doorsteps.
     private static SolverInput BuildSolverInput(Trip trip, OptimisationRun run)
-    {
-        // Construct a flat node list: [destination, ...participantHomes].
-        // The matrix is sparse/synthetic — solvers from WS3 will overwrite this in production.
-        var nodes = new List<SolverNode>
-        {
-            new(0, NodeKind.Home, CandidateNodeId: null, Location: trip.DestinationLocation),
-        };
-
-        var drivers = new List<SolverDriver>();
-        var passengers = new List<SolverPassenger>();
-
-        var index = 1;
-        foreach (var participant in trip.Participants)
-        {
-            var participantNodeIndex = index++;
-            nodes.Add(new SolverNode(participantNodeIndex, NodeKind.Home, CandidateNodeId: null, Location: participant.Home));
-
-            if (participant.HasCar)
-            {
-                drivers.Add(new SolverDriver(participant.Id, participantNodeIndex, participant.Seats));
-            }
-            else
-            {
-                passengers.Add(new SolverPassenger(
-                    ParticipantId: participant.Id,
-                    CandidateNodeIndices: new[] { participantNodeIndex },
-                    WalkPtMinsByNodeIndex: new[] { 0 }));
-            }
-        }
-
-        if (drivers.Count == 0 && trip.Participants.Count > 0)
-        {
-            // Promote the first participant to a synthetic driver so the solver has something to assign to.
-            drivers.Add(new SolverDriver(trip.Participants[0].Id, OriginNodeIndex: 1, Seats: Math.Max(1, trip.Participants.Count)));
-        }
-
-        var n = nodes.Count;
-        var matrix = new double[n, n];
-        for (var i = 0; i < n; i++)
-        {
-            for (var j = 0; j < n; j++)
-            {
-                matrix[i, j] = i == j ? 0.0 : 10.0;
-            }
-        }
-
-        return new SolverInput(
-            RunId: run.Id,
-            TripId: trip.Id,
-            Weights: run.Weights,
-            Drivers: drivers,
-            Passengers: passengers,
-            Nodes: nodes,
-            TravelMatrix: matrix,
-            DepartAt: trip.DepartAt);
-    }
+        => SolverInputBuilder.Build(trip, run);
 
     private async Task MarkFailedAsync(Guid runId, string reason)
     {

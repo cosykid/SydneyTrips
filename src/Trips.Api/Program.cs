@@ -106,6 +106,24 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Diagnostic banner: prints which integration clients ended up wired (live vs stub) and the
+// effective ASPNETCORE_ENVIRONMENT. Catches the common "I set user-secrets but it's still
+// stub" gotcha — if you see "TfNSW=Stub" here, the binder didn't see your key.
+{
+    var bannerLogger = app.Services.GetRequiredService<ILogger<Program>>();
+    var tfnsw = app.Services.GetRequiredService<ITfNswClient>();
+    var routes = app.Services.GetRequiredService<IGoogleRoutesClient>();
+    var geo = app.Services.GetRequiredService<IGeocodingClient>();
+    string Kind(object svc) => svc.GetType().Name.StartsWith("Stub", StringComparison.Ordinal)
+        ? "Stub"
+        : svc.GetType().Name.StartsWith("Caching", StringComparison.Ordinal)
+            ? "Live (cached)"
+            : "Live";
+    bannerLogger.LogInformation(
+        "Integrations: TfNSW={TfNsw} · GoogleRoutes={Routes} · Geocoding={Geocoding} · Env={Env}",
+        Kind(tfnsw), Kind(routes), Kind(geo), app.Environment.EnvironmentName);
+}
+
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseStatusCodePages();

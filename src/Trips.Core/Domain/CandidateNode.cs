@@ -25,6 +25,14 @@ public sealed class CandidateNode
 
     public string? DisplayName { get; private set; }
 
+    /// <summary>
+    /// Actual geometric path the participant follows from home to this node, sourced from the
+    /// TfNSW trip-planner leg geometries (concatenated walk + PT legs). Null for the Home node
+    /// (no path) and for any node generated against a stub / pre-polyline cache. When present,
+    /// the FE map draws this instead of a crow-fly dashed straight line.
+    /// </summary>
+    public LineString? Path { get; private set; }
+
     private CandidateNode()
     {
         Location = default!;
@@ -38,7 +46,8 @@ public sealed class CandidateNode
         int walkMins,
         int ptMins,
         string? externalId = null,
-        string? displayName = null)
+        string? displayName = null,
+        LineString? path = null)
     {
         ArgumentNullException.ThrowIfNull(location);
         if (walkMins < 0)
@@ -59,6 +68,7 @@ public sealed class CandidateNode
         PtMins = ptMins;
         ExternalId = externalId;
         DisplayName = displayName;
+        Path = path;
     }
 
     /// <summary>Total minutes the participant pays to reach this node from home.</summary>

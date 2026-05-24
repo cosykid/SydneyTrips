@@ -27,7 +27,11 @@ public sealed record ParticipantWithNodesDto(
 
 /// <summary>API view of a <see cref="Trips.Core.Domain.CandidateNode"/>. The solver picks
 /// one of these per assigned participant; the planner UI renders them as faint markers
-/// so users can see the pickup options around each origin.</summary>
+/// so users can see the pickup options around each origin.
+///
+/// <para><c>Path</c> is the real PT geometry from the participant's home to this hub — when
+/// non-null, the FE map draws this polyline instead of a straight crow-fly line. Null for
+/// the Home node and for any node generated before the polyline feature shipped.</para></summary>
 public sealed record CandidateNodeDto(
     Guid Id,
     Guid ParticipantId,
@@ -37,7 +41,15 @@ public sealed record CandidateNodeDto(
     int WalkMins,
     int PtMins,
     string? ExternalId,
-    string? DisplayName);
+    string? DisplayName,
+    PathDto? Path);
+
+/// <summary>A polyline as an ordered <c>[longitude, latitude]</c> sequence. Kept flat (no
+/// nested per-leg objects) for the simplest possible FE rendering — the FE just draws a
+/// single line. Multi-leg colour-coding can come later by switching to a richer shape.</summary>
+public sealed record PathDto(IReadOnlyList<PathCoordinateDto> Coordinates);
+
+public sealed record PathCoordinateDto(double Longitude, double Latitude);
 
 /// <summary>Wire-stable name for <see cref="Trips.Core.Domain.NodeKind"/>. We expose
 /// strings rather than ints so the frontend can switch on values without depending on

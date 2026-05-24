@@ -62,6 +62,7 @@ public static class OptimisationEndpoints
         Guid runId,
         TripAuthorizationService authz,
         IOptimisationRunRepository runs,
+        ITripRepository trips,
         CancellationToken ct)
     {
         var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
@@ -80,7 +81,10 @@ public static class OptimisationEndpoints
             ? run.Solutions.FirstOrDefault(s => s.Id == run.BestSolutionId.Value)
             : run.Solutions.FirstOrDefault();
 
-        var payload = new OptimisationRunDtoWithSolution(run.ToDto(), bestSolution?.ToDto());
+        // Re-load with participants + candidate nodes so the solution DTO can carry the walk/PT
+        // split per pickup. authz.LookupAsync only loads the trip summary, not the participant set.
+        var tripWithPeople = await trips.GetWithParticipantsAsync(tripId, ct).ConfigureAwait(false);
+        var payload = new OptimisationRunDtoWithSolution(run.ToDto(), bestSolution?.ToDto(tripWithPeople));
         return TypedResults.Ok(payload);
     }
 
@@ -131,7 +135,7 @@ public static class OptimisationEndpoints
                 objective: solution.Objective,
                 objectiveTerms: solution.ObjectiveTerms,
                 routes: solution.Routes);
-            results.Add(labelled.ToDto());
+            results.Add(labelled.ToDto(tripWithPeople));
         }
 
         IReadOnlyList<SolutionDto> payload = results;
@@ -145,41 +149,15 @@ public sealed record OptimisationRunDtoWithSolution(OptimisationRunDto Run, Solu
 internal static class ParetoSupport
 {
     /// <summary>
-    /// Tiny duplicate of <c>OptimisationRunner.BuildSolverInput</c> to avoid the runner having to
-    /// expose internals. Real WS3 solvers ignore most of this in favour of their own pipelines.
+    /// Build a solver input for the Pareto carousel's three preset weights. We reuse
+    /// <see cref="SolverInputBuilder.Build"/> (the same builder the runner uses) so all three
+    /// solves see the same node layout — critically including the candidate-node pickups, not
+    /// just participant homes. We synthesise a throwaway <see cref="OptimisationRun"/> as the
+    /// builder's run-context; only its Id + Weights matter for SolverInput.
     /// </summary>
     public static SolverInput BuildSolverInput(Trip trip, Guid runId, ObjectiveWeights weights)
     {
-        var nodes = new List<SolverNode> { new(0, NodeKind.Home, null, trip.DestinationLocation) };
-        var drivers = new List<SolverDriver>();
-        var passengers = new List<SolverPassenger>();
-        var index = 1;
-        foreach (var p in trip.Participants)
-        {
-            var idx = index++;
-            nodes.Add(new SolverNode(idx, NodeKind.Home, null, p.Home));
-            if (p.HasCar)
-            {
-                drivers.Add(new SolverDriver(p.Id, idx, p.Seats));
-            }
-            else
-            {
-                passengers.Add(new SolverPassenger(p.Id, new[] { idx }, new[] { 0 }));
-            }
-        }
-        if (drivers.Count == 0 && trip.Participants.Count > 0)
-        {
-            drivers.Add(new SolverDriver(trip.Participants[0].Id, 1, Math.Max(1, trip.Participants.Count)));
-        }
-        var n = nodes.Count;
-        var matrix = new double[n, n];
-        for (var i = 0; i < n; i++)
-        {
-            for (var j = 0; j < n; j++)
-            {
-                matrix[i, j] = i == j ? 0.0 : 10.0;
-            }
-        }
-        return new SolverInput(runId, trip.Id, weights, drivers, passengers, nodes, matrix, trip.DepartAt);
+        var run = new OptimisationRun(runId, trip.Id, weights, SolverKind.OrTools, DateTimeOffset.UtcNow);
+        return SolverInputBuilder.Build(trip, run);
     }
 }

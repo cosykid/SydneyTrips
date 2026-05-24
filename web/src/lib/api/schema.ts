@@ -55,9 +55,23 @@ export interface Trip extends TripSummary {
 
 export interface CandidateNode {
   id: Uuid;
+  /** The participant this candidate node belongs to — candidate sets are per-participant,
+   *  not shared, so this is needed when matching a Stop's candidateNodeId to a passenger's
+   *  walk/PT split. */
+  participantId?: Uuid;
   location: LatLng;
   label?: string;
   modality?: "bus_stop" | "train_station" | "ferry_wharf" | "light_rail" | "generic";
+  /** Walking minutes from the participant's home to this node (0 for the Home node itself). */
+  walkMins?: number;
+  /** Public-transport minutes from home (bus / train / ferry / light rail). Non-zero indicates
+   *  the passenger is expected to take PT — pure-walk candidates have ptMins = 0. */
+  ptMins?: number;
+  /** Ordered polyline of the participant's PT journey from home to this hub, in
+   *  [lng, lat] form per point. Undefined for the Home node and for nodes generated
+   *  before the polyline feature shipped (legacy DB rows). When present, the map
+   *  draws this instead of a crow-fly straight line. */
+  path?: LatLng[];
 }
 
 export interface ObjectiveWeights {
@@ -104,8 +118,25 @@ export interface SolutionStop {
   candidateNodeId?: Uuid;
   location: LatLng;
   arriveAt: IsoDateTime;
+  /** Modality of the candidate node served at this stop. UI uses this to pick a transit icon
+   *  on hubs (train station / bus stop / ferry / light rail). */
+  nodeKind?: CandidateNode["modality"];
+  /** Per-passenger pickup detail — supersedes the bare `passengerIds` list, but we keep that
+   *  for legacy adapters until they're migrated. */
+  pickupLegs: PickupLeg[];
+  /** Legacy aggregate view — list of participant ids picked up here. Derived from pickupLegs. */
   passengerIds: Uuid[];
+  /** Approximate walking distance for backward compatibility; new code should sum each leg's
+   *  walkMins instead. */
   walkMetres: number;
+}
+
+/** One passenger's home → pickup leg. Walking + PT minutes are reported separately so the UI
+ *  can render the two segments distinctly. */
+export interface PickupLeg {
+  participantId: Uuid;
+  walkMins: number;
+  ptMins: number;
 }
 
 export interface Solution {

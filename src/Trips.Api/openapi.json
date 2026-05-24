@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5099/"
+      "url": "http://localhost:5000/"
     }
   ],
   "paths": {
@@ -19,6 +19,40 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/trips/{tripId}/refresh-candidate-nodes": {
+      "post": {
+        "tags": [
+          "Participants"
+        ],
+        "operationId": "RefreshCandidateNodes",
+        "parameters": [
+          {
+            "name": "tripId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshCandidateNodesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -860,7 +894,8 @@
           "walkMins",
           "ptMins",
           "externalId",
-          "displayName"
+          "displayName",
+          "path"
         ],
         "type": "object",
         "properties": {
@@ -917,6 +952,16 @@
             "type": [
               "null",
               "string"
+            ]
+          },
+          "path": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PathDto"
+              }
             ]
           }
         }
@@ -1549,6 +1594,75 @@
           }
         }
       },
+      "PathCoordinateDto": {
+        "required": [
+          "longitude",
+          "latitude"
+        ],
+        "type": "object",
+        "properties": {
+          "longitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "latitude": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "PathDto": {
+        "required": [
+          "coordinates"
+        ],
+        "type": "object",
+        "properties": {
+          "coordinates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PathCoordinateDto"
+            }
+          }
+        }
+      },
+      "PickupLegDto": {
+        "required": [
+          "participantId",
+          "walkMins",
+          "ptMins"
+        ],
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "walkMins": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "ptMins": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "PreferencesDto": {
         "required": [
           "walkBudgetMins",
@@ -1580,6 +1694,40 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "RefreshCandidateNodesResponse": {
+        "required": [
+          "participantsRefreshed",
+          "candidateNodesBefore",
+          "candidateNodesAfter"
+        ],
+        "type": "object",
+        "properties": {
+          "participantsRefreshed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "candidateNodesBefore": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "candidateNodesAfter": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -1709,6 +1857,7 @@
           "longitude",
           "latitude",
           "candidateNodeId",
+          "nodeKind",
           "estimatedArrival",
           "pickups"
         ],
@@ -1746,6 +1895,9 @@
             "type": "string",
             "format": "uuid"
           },
+          "nodeKind": {
+            "$ref": "#/components/schemas/CandidateNodeKindDto"
+          },
           "estimatedArrival": {
             "type": "string",
             "format": "date-time"
@@ -1753,8 +1905,7 @@
           "pickups": {
             "type": "array",
             "items": {
-              "type": "string",
-              "format": "uuid"
+              "$ref": "#/components/schemas/PickupLegDto"
             }
           }
         }
@@ -2079,10 +2230,10 @@
       "name": "Health"
     },
     {
-      "name": "Trips"
+      "name": "Participants"
     },
     {
-      "name": "Participants"
+      "name": "Trips"
     },
     {
       "name": "Optimisation"

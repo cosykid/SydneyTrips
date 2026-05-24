@@ -121,9 +121,13 @@ export function apiParticipantToUi(p: ParticipantWithNodesDto | ParticipantDto):
 export function apiCandidateNodeToUi(n: CandidateNodeDto): CandidateNode {
   return {
     id: n.id,
+    participantId: n.participantId,
     location: pointToLatLng(n.longitude, n.latitude),
     label: n.displayName ?? n.externalId ?? undefined,
     modality: modalityFromKind(num(n.kind)),
+    walkMins: num(n.walkMins),
+    ptMins: num(n.ptMins),
+    path: n.path?.coordinates?.map((c) => pointToLatLng(c.longitude, c.latitude)),
   };
 }
 
@@ -163,12 +167,22 @@ export function apiToCostSplit(r: CostSplitResponse): CostSplit {
 }
 
 function apiStopToUi(s: StopDto): SolutionStop {
+  const legs = s.pickups.map((p) => ({
+    participantId: p.participantId,
+    walkMins: num(p.walkMins),
+    ptMins: num(p.ptMins),
+  }));
+  // walkMetres is the legacy aggregate field — approximate by summing each leg's walk minutes
+  // at ~80 m/min so existing consumers (CostBreakdown, etc.) keep working.
+  const walkMetres = legs.reduce((m, l) => m + l.walkMins * 80, 0);
   return {
     candidateNodeId: s.candidateNodeId,
     location: pointToLatLng(s.longitude, s.latitude),
     arriveAt: s.estimatedArrival,
-    passengerIds: s.pickups,
-    walkMetres: 0,
+    nodeKind: modalityFromKind(num(s.nodeKind)),
+    pickupLegs: legs,
+    passengerIds: legs.map((l) => l.participantId),
+    walkMetres,
   };
 }
 

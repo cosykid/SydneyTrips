@@ -30,6 +30,7 @@ function solution(stops: Array<{ id?: string; lat: number; lng: number; pax: str
           candidateNodeId: s.id,
           location: { lat: s.lat, lng: s.lng },
           arriveAt: new Date().toISOString(),
+          pickupLegs: s.pax.map((pid) => ({ participantId: pid, walkMins: 1, ptMins: 0 })),
           passengerIds: s.pax,
           walkMetres: 100,
         })),
