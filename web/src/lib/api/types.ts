@@ -496,6 +496,7 @@ export interface components {
             walkMins: number | string;
             /** Format: int32 */
             ptMins: number | string;
+            path: null | components["schemas"]["PathDto"];
         };
         PreferencesDto: {
             /** Format: int32 */

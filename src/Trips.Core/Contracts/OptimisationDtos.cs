@@ -66,8 +66,12 @@ public sealed record StopDto(
 
 /// <summary>One passenger's leg from home to this stop. <see cref="WalkMins"/> is the walking
 /// portion; <see cref="PtMins"/> is the public-transport portion (bus/train/ferry/light rail). The
-/// total home-to-pickup time is the sum.</summary>
+/// total home-to-pickup time is the sum. <see cref="Path"/> is <em>this passenger's</em> real
+/// home→pickup geometry — carried per-leg (not just on the stop's single canonical candidate node)
+/// so that when several passengers share a pickup hub each renders along their own route rather
+/// than a straight crow-fly line.</summary>
 public sealed record PickupLegDto(
     Guid ParticipantId,
     int WalkMins,
-    int PtMins);
+    int PtMins,
+    PathDto? Path);

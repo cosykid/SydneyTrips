@@ -143,6 +143,10 @@ internal static class Mappers
         var keyByCnId = new Dictionary<Guid, string>();
         var kindByKey = new Dictionary<string, NodeKind>(StringComparer.Ordinal);
         var legsByPidAndKey = new Dictionary<(Guid Participant, string Key), (int Walk, int Pt)>();
+        // Each passenger's own home→hub geometry, keyed the same way as the walk/PT split. Carried
+        // per-leg so co-located passengers (who collapse to one canonical SolverNode) each keep
+        // their own path instead of all inheriting the canonical node's.
+        var pathByPidAndKey = new Dictionary<(Guid Participant, string Key), PathDto?>();
         if (trip is not null)
         {
             foreach (var participant in trip.Participants)
@@ -153,6 +157,7 @@ internal static class Mappers
                     keyByCnId[cn.Id] = key;
                     kindByKey.TryAdd(key, cn.Kind);
                     legsByPidAndKey[(participant.Id, key)] = (cn.WalkMins, cn.PtMins);
+                    pathByPidAndKey[(participant.Id, key)] = ToPathDto(cn.Path);
                 }
             }
         }
@@ -188,12 +193,13 @@ internal static class Mappers
                         Pickups: s.Pickups
                             .Select(pid =>
                             {
-                                if (keyByCnId.TryGetValue(s.CandidateNodeId, out var key)
-                                    && legsByPidAndKey.TryGetValue((pid, key), out var legs))
+                                if (keyByCnId.TryGetValue(s.CandidateNodeId, out var key))
                                 {
-                                    return new PickupLegDto(pid, legs.Walk, legs.Pt);
+                                    var legs = legsByPidAndKey.TryGetValue((pid, key), out var l) ? l : (Walk: 0, Pt: 0);
+                                    pathByPidAndKey.TryGetValue((pid, key), out var path);
+                                    return new PickupLegDto(pid, legs.Walk, legs.Pt, path);
                                 }
-                                return new PickupLegDto(pid, WalkMins: 0, PtMins: 0);
+                                return new PickupLegDto(pid, WalkMins: 0, PtMins: 0, Path: null);
                             })
                             .ToList()))
                     .ToList()))

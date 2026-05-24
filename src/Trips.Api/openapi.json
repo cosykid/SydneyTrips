@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5000/"
+      "url": "http://localhost:5050/"
     }
   ],
   "paths": {
@@ -1637,7 +1637,8 @@
         "required": [
           "participantId",
           "walkMins",
-          "ptMins"
+          "ptMins",
+          "path"
         ],
         "type": "object",
         "properties": {
@@ -1660,6 +1661,16 @@
               "string"
             ],
             "format": "int32"
+          },
+          "path": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PathDto"
+              }
+            ]
           }
         }
       },
