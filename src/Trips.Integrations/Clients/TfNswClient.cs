@@ -92,14 +92,19 @@ internal sealed class TfNswClient : ITfNswClient
             throw new ArgumentOutOfRangeException(nameof(radiusMeters), radiusMeters, "radius must be positive");
         }
 
+        // EFA's coord endpoint returns nothing when you use the `_sf` (single-field free-text)
+        // params for a radius lookup. The working pattern is the indexed-filter form:
+        // `inclFilter=1` activates the filter list, `type_1=STOP` says "give me transit stops",
+        // `radius_1` bounds the search. Probed live 2026-05; without these, the API answers 200
+        // with `"locations":[]` for even Sydney CBD.
         var coord = $"{origin.X.ToString(CultureInfo.InvariantCulture)}:{origin.Y.ToString(CultureInfo.InvariantCulture)}:EPSG:4326";
         var qs = new QueryStringBuilder()
             .Add("outputFormat", "rapidJSON")
             .Add("coord", coord)
-            .Add("type_sf", "any")
-            .Add("radius_sf", radiusMeters.ToString(CultureInfo.InvariantCulture))
             .Add("coordOutputFormat", "EPSG:4326")
             .Add("inclFilter", "1")
+            .Add("type_1", "STOP")
+            .Add("radius_1", radiusMeters.ToString(CultureInfo.InvariantCulture))
             .Build();
 
         using var scope = _logger.BeginScope(new Dictionary<string, object?>
@@ -223,7 +228,16 @@ internal sealed class TfNswClient : ITfNswClient
 
                 var from = LegPoint(leg.Origin);
                 var to = LegPoint(leg.Destination);
-                legs.Add(new TfNswJourneyLeg(mode, minutes, from, to, leg.Transportation?.Number));
+                var polyline = LegPolyline(leg.Coords);
+                legs.Add(new TfNswJourneyLeg(
+                    mode,
+                    minutes,
+                    from,
+                    to,
+                    leg.Transportation?.Number,
+                    FromName: leg.Origin?.Name,
+                    ToName: leg.Destination?.Name,
+                    Polyline: polyline));
             }
         }
 
@@ -237,8 +251,18 @@ internal sealed class TfNswClient : ITfNswClient
             return Array.Empty<TfNswCoordinateStop>();
         }
 
+        // Real rapidJSON shape for type_1=STOP results (probed live 2026-05): the useful fields
+        // live under `properties`, not at the top level:
+        //   - properties.distance          → metres from query coord (top-level is null)
+        //   - properties.stopId            → numeric EFA stopId, the form TripPlan/Departures want
+        //   - properties.STOP_NAME_WITH_PLACE → human name; top-level `name` is literally
+        //                                       "undefined, undefined" for stop-type rows.
+        // Top-level `id` is a "global id" (e.g. G200077) in a different namespace and is NOT
+        // accepted by TripPlanAsync / DepartureAsync.
+        //
+        // Coord order on this endpoint is [lat, lng]; NTS Point needs (X=lng, Y=lat).
         var ordered = payload.Locations
-            .OrderBy(l => l.Distance ?? int.MaxValue)
+            .OrderBy(l => l.Properties?.Distance ?? l.Distance ?? int.MaxValue)
             .ToList();
         var results = new List<TfNswCoordinateStop>(ordered.Count);
         foreach (var loc in ordered)
@@ -249,14 +273,23 @@ internal sealed class TfNswClient : ITfNswClient
                 continue;
             }
 
-            // TfNSW returns coords as [lng, lat]; NTS expects (X=lng, Y=lat).
-            var point = GeometryFactory.CreatePoint(new Coordinate(coords[0], coords[1]));
+            var point = GeometryFactory.CreatePoint(new Coordinate(coords[1], coords[0]));
             var mode = loc.ProductClasses is { Count: > 0 } pc ? ClassifyMode(pc[0]) : loc.Type ?? "unknown";
+            var stopId = loc.Properties?.StopId ?? loc.Id ?? string.Empty;
+            if (string.IsNullOrEmpty(stopId))
+            {
+                continue;
+            }
+            var name = !string.IsNullOrEmpty(loc.Properties?.StopNameWithPlace)
+                ? loc.Properties.StopNameWithPlace
+                : !string.IsNullOrEmpty(loc.Name) && loc.Name != "undefined, undefined"
+                    ? loc.Name
+                    : stopId;
             results.Add(new TfNswCoordinateStop(
-                StopId: loc.Id ?? string.Empty,
-                Name: loc.Name ?? string.Empty,
+                StopId: stopId,
+                Name: name,
                 Location: point,
-                DistanceMeters: loc.Distance ?? 0,
+                DistanceMeters: loc.Properties?.Distance ?? loc.Distance ?? 0,
                 Mode: mode));
         }
         return results;
@@ -310,11 +343,33 @@ internal sealed class TfNswClient : ITfNswClient
 
     private static Point LegPoint(LegEndpoint? endpoint)
     {
+        // EFA rapidJSON returns leg coords as [lat, lng] (same as the /coord endpoint, verified
+        // live 2026-05). NTS Point wants (X=lng, Y=lat). Reversing this silently put every
+        // PT-leg endpoint somewhere in the Indian Ocean — fed through the haversine travel
+        // matrix, that produced ~150-hour drive times and CP-SAT proved the model infeasible
+        // before search started.
         if (endpoint?.Coord is { Count: >= 2 } c)
         {
-            return GeometryFactory.CreatePoint(new Coordinate(c[0], c[1]));
+            return GeometryFactory.CreatePoint(new Coordinate(c[1], c[0]));
         }
         return GeometryFactory.CreatePoint(new Coordinate(0, 0));
+    }
+
+    /// <summary>
+    /// Convert EFA's <c>[[lat,lng], ...]</c> coords array to NTS Points in (X=lng, Y=lat) order.
+    /// Returns null when the input is missing/empty so downstream consumers can distinguish
+    /// "no geometry available" (legacy stub, cached pre-feature plan) from "empty journey".
+    /// </summary>
+    private static IReadOnlyList<Point>? LegPolyline(List<List<double>>? coords)
+    {
+        if (coords is null || coords.Count == 0) return null;
+        var points = new List<Point>(coords.Count);
+        foreach (var pair in coords)
+        {
+            if (pair is null || pair.Count < 2) continue;
+            points.Add(GeometryFactory.CreatePoint(new Coordinate(pair[1], pair[0])));
+        }
+        return points.Count > 0 ? points : null;
     }
 
     private static string ClassifyMode(int productClass) => productClass switch
@@ -346,6 +401,13 @@ internal sealed class TfNswClient : ITfNswClient
         public LegEndpoint? Origin { get; set; }
         public LegEndpoint? Destination { get; set; }
         public TransportationDto? Transportation { get; set; }
+
+        /// <summary>
+        /// EFA returns the leg's geometry as an array of <c>[lat, lng]</c> doubles — typically
+        /// 5–400 points per leg (walks short, transit legs longer). Used to render the real
+        /// PT route on the map instead of a crow-fly straight line.
+        /// </summary>
+        public List<List<double>>? Coords { get; set; }
     }
 
     private sealed class LegEndpoint
@@ -384,8 +446,24 @@ internal sealed class TfNswClient : ITfNswClient
         public string? Name { get; set; }
         public string? Type { get; set; }
         public List<double>? Coord { get; set; }
+        // Top-level `distance` is usually null on the coord endpoint — the real value lives under
+        // `properties`. Kept here purely as a graceful fallback if a future API revision repopulates it.
         public int? Distance { get; set; }
         public List<int>? ProductClasses { get; set; }
+        public CoordPropertiesDto? Properties { get; set; }
+    }
+
+    private sealed class CoordPropertiesDto
+    {
+        public int? Distance { get; set; }
+
+        /// <summary>EFA numeric stopId — the form TripPlan/Departures endpoints accept.</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("stopId")]
+        public string? StopId { get; set; }
+
+        /// <summary>Human-readable stop name with locality. Top-level <c>name</c> is "undefined, undefined" for stop rows.</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("STOP_NAME_WITH_PLACE")]
+        public string? StopNameWithPlace { get; set; }
     }
 
     private sealed class DepartureResponse

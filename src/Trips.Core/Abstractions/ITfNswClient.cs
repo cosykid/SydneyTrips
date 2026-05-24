@@ -27,7 +27,22 @@ public interface ITfNswClient
 /// <summary>Result of a TfNSW trip plan: a journey made of legs, each with mode + travel minutes.</summary>
 public sealed record TfNswTripPlan(IReadOnlyList<TfNswJourneyLeg> Legs, int TotalWalkMins, int TotalPtMins);
 
-public sealed record TfNswJourneyLeg(string Mode, int DurationMins, Point From, Point To, string? RouteShortName);
+/// <summary>
+/// One leg of a TfNSW journey. <paramref name="FromName"/>/<paramref name="ToName"/> are the
+/// human-readable stop names at each end (e.g. "Town Hall Station, Sydney"). <paramref name="Polyline"/>
+/// is the leg's actual path geometry — a sequence of NTS Points (X=lng, Y=lat) — so the UI can
+/// draw the real PT route instead of a straight crow-fly line. All three default to null for
+/// backwards compatibility with tests / stubs that don't care.
+/// </summary>
+public sealed record TfNswJourneyLeg(
+    string Mode,
+    int DurationMins,
+    Point From,
+    Point To,
+    string? RouteShortName,
+    string? FromName = null,
+    string? ToName = null,
+    IReadOnlyList<Point>? Polyline = null);
 
 /// <summary>One coordinate-request hit — a stop or station near a point.</summary>
 public sealed record TfNswCoordinateStop(string StopId, string Name, Point Location, int DistanceMeters, string Mode);

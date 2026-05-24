@@ -78,4 +78,9 @@ public sealed class Participant
         ArgumentNullException.ThrowIfNull(node);
         _candidateNodes.Add(node);
     }
+
+    /// <summary>Drop the participant's existing candidate-node set so a re-populate call can
+    /// regenerate it from scratch — used by the trip-level refresh endpoint when the underlying
+    /// TfNSW client is swapped (e.g. stub → live) or the participant's home changes.</summary>
+    public void ClearCandidateNodes() => _candidateNodes.Clear();
 }

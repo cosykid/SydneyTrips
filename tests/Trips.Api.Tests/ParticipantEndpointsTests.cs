@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Trips.Api.Endpoints;
 using Trips.Core.Contracts;
 
 namespace Trips.Api.Tests;
@@ -101,6 +102,50 @@ public sealed class ParticipantEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var dto = await response.Content.ReadFromJsonAsync<ParticipantDto>();
         dto!.Preferences.WalkBudgetMins.Should().Be(25);
+    }
+
+    [Fact]
+    public async Task AddParticipant_populates_walk_and_pt_minutes_on_candidate_nodes()
+    {
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("pt-mins@example.com");
+        var trip = await CreateTripAsync(client);
+
+        var add = new AddParticipantRequest(
+            DisplayName: "PT Passenger",
+            HomeAddress: null,
+            HomeLongitude: 151.2093,
+            HomeLatitude: -33.8688,
+            HasCar: false,
+            Seats: 0,
+            Preferences: new PreferencesDto(WalkBudgetMins: 5, DetourToleranceMins: 10, FairnessWeight: 1.0));
+        var response = await client.PostAsJsonAsync($"/trips/{trip.Id}/participants", add);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // GET /trips/{id} eager-loads CandidateNodes — assert the stub TfNSW client's far
+        // train station was admitted as a PT-only candidate (walking 3.2 km exceeds the 5-min
+        // walk budget, so this node only makes it in because TripPlanAsync returned PT minutes).
+        var detailResp = await client.GetAsync($"/trips/{trip.Id}");
+        detailResp.EnsureSuccessStatusCode();
+        var detail = await detailResp.Content.ReadFromJsonAsync<TripDetailDto>();
+        detail.Should().NotBeNull();
+        var passenger = detail!.Participants.Single(p => p.DisplayName == "PT Passenger");
+        passenger.CandidateNodes.Should().Contain(c => c.PtMins > 0, "PT-reachable stops should report non-zero ptMins");
+    }
+
+    [Fact]
+    public async Task RefreshCandidateNodes_repopulates_existing_participants()
+    {
+        var (client, _) = await _factory.CreateAuthenticatedClientAsync("refresh@example.com");
+        var trip = await CreateTripAsync(client);
+        await AddParticipantAsync(client, trip.Id);
+
+        var resp = await client.PostAsync($"/trips/{trip.Id}/refresh-candidate-nodes", content: null);
+        resp.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await resp.Content.ReadFromJsonAsync<RefreshCandidateNodesResponse>();
+        payload.Should().NotBeNull();
+        payload!.ParticipantsRefreshed.Should().Be(1);
+        // The stub always returns at least Home + nearby stops, so the post-refresh count must be > 0.
+        payload.CandidateNodesAfter.Should().BeGreaterThan(0);
     }
 
     [Fact]

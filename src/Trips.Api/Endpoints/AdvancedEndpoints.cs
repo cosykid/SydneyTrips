@@ -106,6 +106,7 @@ public static class AdvancedEndpoints
         Guid tripId,
         TripAuthorizationService authz,
         ISolutionRepository solutions,
+        ITripRepository trips,
         CancellationToken ct)
     {
         var trip = await authz.LookupAsync(tripId, ct).ConfigureAwait(false);
@@ -118,7 +119,9 @@ public static class AdvancedEndpoints
         {
             return TypedResults.NotFound();
         }
-        return TypedResults.Ok(solution.ToDto());
+        // Pull the trip with participants so the StopDto pickups carry the walk/PT split.
+        var tripWithPeople = await trips.GetWithParticipantsAsync(tripId, ct).ConfigureAwait(false);
+        return TypedResults.Ok(solution.ToDto(tripWithPeople));
     }
 
     private static async Task<Results<Accepted<EnqueueRunResponse>, NotFound, ProblemHttpResult>> WhatIfAsync(

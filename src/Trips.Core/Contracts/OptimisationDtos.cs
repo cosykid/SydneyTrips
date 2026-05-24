@@ -55,5 +55,19 @@ public sealed record StopDto(
     double Longitude,
     double Latitude,
     Guid CandidateNodeId,
+    /// <summary>Kind of the candidate node served at this stop — lets the FE pick a
+    /// transit-modality icon (train/bus/ferry/light-rail) for transit hubs.</summary>
+    CandidateNodeKindDto NodeKind,
     DateTimeOffset EstimatedArrival,
-    IReadOnlyList<Guid> Pickups);
+    /// <summary>Per-passenger pickup detail — replaces the bare guid list with the walk/PT split
+    /// of each passenger's home → pickup journey, so the planner can render walking vs public
+    /// transport legs without re-joining against the participant's candidate-node set.</summary>
+    IReadOnlyList<PickupLegDto> Pickups);
+
+/// <summary>One passenger's leg from home to this stop. <see cref="WalkMins"/> is the walking
+/// portion; <see cref="PtMins"/> is the public-transport portion (bus/train/ferry/light rail). The
+/// total home-to-pickup time is the sum.</summary>
+public sealed record PickupLegDto(
+    Guid ParticipantId,
+    int WalkMins,
+    int PtMins);

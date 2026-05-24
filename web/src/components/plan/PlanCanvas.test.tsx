@@ -50,13 +50,17 @@ const trip: TripDetailDto = {
           ptMins: 0,
           externalId: null,
           displayName: "Glebe Pt Rd Stop",
+          path: null,
         },
       ],
     },
   ],
 };
 
-// Wire shape from the API: { run: OptimisationRunDto, solution?: SolutionDto }
+// Wire shape from the API: { run: OptimisationRunDto, solution?: SolutionDto }.
+// The run's `solution` is what the slider-driven planner shows now — the old Pareto
+// carousel was replaced by a single-solution panel, so this response is the only
+// source of truth for what's on screen.
 const runResponse = {
   run: {
     id: "run-1",
@@ -70,15 +74,10 @@ const runResponse = {
     bestSolutionId: "sol-1",
     stats: null,
   },
-  solution: null,
-};
-
-// Wire shape from the API: SolutionDto[]
-const paretoResponse = [
-  {
+  solution: {
     id: "sol-1",
     optimisationRunId: "run-1",
-    label: "fastest",
+    label: "current",
     objective: 42,
     objectiveTerms: [],
     routes: [
@@ -91,7 +90,7 @@ const paretoResponse = [
       },
     ],
   },
-];
+};
 
 const mockApiCalls = vi.hoisted(() => ({
   fetchMock: vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(),
@@ -122,7 +121,6 @@ beforeEach(() => {
     if (path === "/trips/trip-1") return jsonResponse(trip);
     if (path === "/trips/trip-1/optimise") return jsonResponse({ runId: "run-1" });
     if (path === "/trips/trip-1/runs/run-1") return jsonResponse(runResponse);
-    if (path === "/trips/trip-1/runs/run-1/pareto") return jsonResponse(paretoResponse);
     if (path === "/trips/trip-1/lock-solution") return jsonResponse(trip);
     return jsonResponse({ message: `unhandled ${path}` }, 500);
   });
@@ -145,16 +143,14 @@ describe("PlanCanvas", () => {
     expect(screen.getByRole("button", { name: /^Plan trip$/i })).toBeInTheDocument();
   });
 
-  it("transitions to the Pareto carousel after optimisation completes", async () => {
+  it("shows the slider-driven solution panel after optimisation completes", async () => {
     const user = userEvent.setup();
     renderCanvas();
 
     const optimise = await screen.findByRole("button", { name: /^Plan trip$/i });
     await user.click(optimise);
 
-    await waitFor(() =>
-      expect(screen.getByTestId("pareto-carousel")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByTestId("solution-panel")).toBeInTheDocument());
     expect(screen.getByText(/42 min/)).toBeInTheDocument(); // total driving
     expect(screen.getByRole("button", { name: /^Re-plan$/i })).toBeInTheDocument();
   });

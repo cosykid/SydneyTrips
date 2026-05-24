@@ -1,3 +1,4 @@
+using Trips.Core.Abstractions;
 using Trips.Core.Contracts;
 using Trips.Core.Domain;
 
@@ -78,7 +79,8 @@ internal static class Mappers
                 WalkMins: n.WalkMins,
                 PtMins: n.PtMins,
                 ExternalId: n.ExternalId,
-                DisplayName: n.DisplayName))
+                DisplayName: n.DisplayName,
+                Path: ToPathDto(n.Path)))
             .ToList();
         return new ParticipantWithNodesDto(
             Id: p.Id,
@@ -122,9 +124,50 @@ internal static class Mappers
             Stats: stats);
     }
 
-    public static SolutionDto ToDto(this Solution solution)
+    /// <summary>
+    /// Map a <see cref="Solution"/> to its DTO. Pass <paramref name="trip"/> (with participants and
+    /// their candidate nodes eager-loaded) so each <see cref="StopDto.Pickups"/> entry can carry the
+    /// passenger's walk/PT split. When <paramref name="trip"/> is null we fall back to zero mins
+    /// for both — useful for endpoints that only have the solution at hand.
+    /// </summary>
+    public static SolutionDto ToDto(this Solution solution, Trip? trip = null)
     {
         ArgumentNullException.ThrowIfNull(solution);
+
+        // SolverInputBuilder dedups co-located CandidateNodes across passengers (one canonical
+        // SolverNode per physical stop). The resulting `Stop.CandidateNodeId` points at the
+        // canonical participant's CN row — which may not be the picking passenger's own CN. We
+        // therefore resolve walk/PT mins by canonical key (TfNSW stop_id, or ~10m lat/lng bucket)
+        // rather than by CN id directly. In the non-deduped case this collapses to the old
+        // behaviour because each participant's own CN canonicalises back to the same key.
+        var keyByCnId = new Dictionary<Guid, string>();
+        var kindByKey = new Dictionary<string, NodeKind>(StringComparer.Ordinal);
+        var legsByPidAndKey = new Dictionary<(Guid Participant, string Key), (int Walk, int Pt)>();
+        if (trip is not null)
+        {
+            foreach (var participant in trip.Participants)
+            {
+                foreach (var cn in participant.CandidateNodes)
+                {
+                    var key = SolverInputBuilder.CanonicalKey(cn);
+                    keyByCnId[cn.Id] = key;
+                    kindByKey.TryAdd(key, cn.Kind);
+                    legsByPidAndKey[(participant.Id, key)] = (cn.WalkMins, cn.PtMins);
+                }
+            }
+        }
+
+        NodeKind ResolveNodeKind(Guid candidateNodeId)
+        {
+            if (trip is null || candidateNodeId == Guid.Empty) return NodeKind.Home;
+            if (keyByCnId.TryGetValue(candidateNodeId, out var key)
+                && kindByKey.TryGetValue(key, out var kind))
+            {
+                return kind;
+            }
+            return NodeKind.Home;
+        }
+
         var routes = solution.Routes
             .OrderBy(r => r.OrderIndex)
             .Select(r => new DriverRouteDto(
@@ -140,8 +183,19 @@ internal static class Mappers
                         Longitude: s.Location.X,
                         Latitude: s.Location.Y,
                         CandidateNodeId: s.CandidateNodeId,
+                        NodeKind: (CandidateNodeKindDto)ResolveNodeKind(s.CandidateNodeId),
                         EstimatedArrival: s.EstimatedArrival,
-                        Pickups: s.Pickups))
+                        Pickups: s.Pickups
+                            .Select(pid =>
+                            {
+                                if (keyByCnId.TryGetValue(s.CandidateNodeId, out var key)
+                                    && legsByPidAndKey.TryGetValue((pid, key), out var legs))
+                                {
+                                    return new PickupLegDto(pid, legs.Walk, legs.Pt);
+                                }
+                                return new PickupLegDto(pid, WalkMins: 0, PtMins: 0);
+                            })
+                            .ToList()))
                     .ToList()))
             .ToList();
 
@@ -163,5 +217,17 @@ internal static class Mappers
             WalkAndPt: dto.WalkAndPt,
             ArrivalSpread: dto.ArrivalSpread,
             Fairness: dto.Fairness);
+    }
+
+    private static PathDto? ToPathDto(NetTopologySuite.Geometries.LineString? path)
+    {
+        if (path is null || path.NumPoints < 2) return null;
+        var coords = new List<PathCoordinateDto>(path.NumPoints);
+        for (var i = 0; i < path.NumPoints; i++)
+        {
+            var c = path.GetCoordinateN(i);
+            coords.Add(new PathCoordinateDto(Longitude: c.X, Latitude: c.Y));
+        }
+        return new PathDto(coords);
     }
 }

@@ -23,6 +23,12 @@ internal sealed class CandidateNodeConfiguration : IEntityTypeConfiguration<Cand
         b.Property(x => x.ExternalId).HasMaxLength(64);
         b.Property(x => x.DisplayName).HasMaxLength(200);
 
+        // Optional PT-route geometry (multi-leg path home → this hub). PostGIS LineString in
+        // SRID 4326, no spatial index — we never query by it, just read/write whole-row.
+        b.Property(x => x.Path)
+            .HasColumnType("geometry(LineString, 4326)")
+            .IsRequired(false);
+
         b.HasIndex(x => x.ParticipantId);
         b.HasIndex(x => x.Location).HasMethod("gist");
     }

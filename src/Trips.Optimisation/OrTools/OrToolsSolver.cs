@@ -336,32 +336,46 @@ public sealed class OrToolsSolver : ISolver
         }
         model.Add(spread == maxArr - minArr);
 
-        // Fairness term: max |perPassengerJourney − median| is hard to express directly in CP-SAT;
-        // we use a robust surrogate: max_p (arrival[d(p), destination] + walk(p,n(p))) − min_p (same)
-        // i.e. the worst-passenger-minus-best-passenger gap. Equivalent to spread when walking is 0.
-        var maxJourney = model.NewIntVar(0, 2 * BigM, "max_journey");
-        var minJourney = model.NewIntVar(0, 2 * BigM, "min_journey");
-        var fairness = model.NewIntVar(0, 2 * BigM, "fairness");
-        for (var p = 0; p < input.Passengers.Count; p++)
+        // Fairness term: "Share driving time evenly across drivers" (the UI's framing). The old
+        // formulation was max_passenger journey-time minus min_passenger journey-time — which is
+        // identically zero when every passenger rides the same driver, so it gave the solver no
+        // reason to use more than one car. The user-facing slider then did nothing on trips with
+        // enough seats in one car.
+        //
+        // Now: penalise the spread of load (passengers carried) across drivers. With N passengers
+        // and K capacious drivers, the minimiser of maxLoad-minLoad is ⌈N/K⌉ - ⌊N/K⌋ (the
+        // balanced split), so cranking this slider pushes the solver toward distributing pickups.
+        // Multiplied by TimeScale so this term lives in the same scaled units as the others.
+        // Per-driver load = sum of assign[d,p,n] over all (p,n). Bound each load var to the actual
+        // sum so CP-SAT propagates it through the AddMaxEquality / AddMinEquality below.
+        var loadVars = new IntVar[input.Drivers.Count];
+        for (var d = 0; d < input.Drivers.Count; d++)
         {
-            for (var d = 0; d < input.Drivers.Count; d++)
+            var load = model.NewIntVar(0, input.Passengers.Count, $"load_d{d}");
+            var loadSum = LinearExpr.NewBuilder();
+            for (var p = 0; p < input.Passengers.Count; p++)
             {
-                for (var k = 0; k < input.Passengers[p].CandidateNodeIndices.Count; k++)
+                foreach (var n in input.Passengers[p].CandidateNodeIndices)
                 {
-                    var n = input.Passengers[p].CandidateNodeIndices[k];
-                    var w = input.Passengers[p].WalkPtMinsByNodeIndex[k] * TimeScale;
-                    // journey_p = arrival[d,dest] + w  *if* assign[d,p,n]=1
-                    // Use big-M: maxJourney >= arrival[d,dest] + w − BigM·(1 − assign[d,p,n])
-                    model.Add(maxJourney >= arrival[d, destIndex] + w - BigM * (1 - (LinearExpr)assign[d, p, n]));
-                    model.Add(minJourney <= arrival[d, destIndex] + w + BigM * (1 - (LinearExpr)assign[d, p, n]));
+                    loadSum.AddTerm(assign[d, p, n], 1);
                 }
             }
+            model.Add(load == loadSum);
+            loadVars[d] = load;
         }
-        model.Add(fairness == maxJourney - minJourney);
+        var maxLoad = model.NewIntVar(0, input.Passengers.Count, "max_load");
+        var minLoad = model.NewIntVar(0, input.Passengers.Count, "min_load");
+        model.AddMaxEquality(maxLoad, loadVars);
+        model.AddMinEquality(minLoad, loadVars);
+        var loadSpread = model.NewIntVar(0, input.Passengers.Count, "load_spread");
+        model.Add(loadSpread == maxLoad - minLoad);
 
-        // Spread and fairness are already in scaled units, just multiply by their weights.
+        // Spread already lives in scaled time units (TimeScale). loadSpread is a passenger count;
+        // multiply by TimeScale so a 1-passenger imbalance compares to a 1-minute drive overhead
+        // at unit weight — i.e. cranking Fairness to 1.0 says "I'd happily pay an extra minute of
+        // drive time to balance one passenger off a single driver". That's the natural anchor.
         totalObj.AddTerm(spread, w3);
-        totalObj.AddTerm(fairness, w4);
+        totalObj.AddTerm(loadSpread, (long)TimeScale * w4);
         model.Minimize(totalObj);
 
         // --- Warm-start hint (what-if re-optimisation) -------------------------------------------
@@ -378,9 +392,18 @@ public sealed class OrToolsSolver : ISolver
 
         var solver = new CpSolver();
         var seconds = Math.Max(0.05, _options.TimeBudgetMs / 1000.0);
+        // Single-worker search is the only way CP-SAT is reproducible across runs. With multiple
+        // workers, the search races to find a solution and the "best so far" returned at the time
+        // budget depends on wall-clock order — so re-clicking "Re-plan" with the same input could
+        // alternate between (e.g.) "steve picks up at Epping, 22 min" and "steve detours to
+        // Randwick, 81 min". For the problem sizes we see (≤ 20 nodes, ≤ 10 drivers) CP-SAT
+        // proves optimality in <100ms even on one core, so the latency cost is zero in practice.
+        // If we ever ship a size class where this hurts, swap to `interleave_search:true` with
+        // bumped workers — that's deterministic but parallel; or set a high enough budget to
+        // always prove optimal (gap=0 is reproducible no matter how many workers).
         solver.StringParameters =
             $"max_time_in_seconds:{seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}," +
-            $"num_search_workers:4," +
+            $"num_search_workers:1," +
             $"random_seed:{_options.RandomSeed}," +
             (_options.LogProgress ? "log_search_progress:true" : "log_search_progress:false");
 

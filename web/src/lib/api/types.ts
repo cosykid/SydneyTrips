@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/trips/{tripId}/refresh-candidate-nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["RefreshCandidateNodes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips": {
         parameters: {
             query?: never;
@@ -308,6 +324,7 @@ export interface components {
             ptMins: number | string;
             externalId: null | string;
             displayName: null | string;
+            path: null | components["schemas"]["PathDto"];
         };
         /** @enum {unknown} */
         CandidateNodeKindDto: "home" | "trainStation" | "busStop" | "wharf" | "lightRailStop";
@@ -463,6 +480,23 @@ export interface components {
             preferences: components["schemas"]["PreferencesDto"];
             candidateNodes: components["schemas"]["CandidateNodeDto"][];
         };
+        PathCoordinateDto: {
+            /** Format: double */
+            longitude: number | string;
+            /** Format: double */
+            latitude: number | string;
+        };
+        PathDto: {
+            coordinates: components["schemas"]["PathCoordinateDto"][];
+        };
+        PickupLegDto: {
+            /** Format: uuid */
+            participantId: string;
+            /** Format: int32 */
+            walkMins: number | string;
+            /** Format: int32 */
+            ptMins: number | string;
+        };
         PreferencesDto: {
             /** Format: int32 */
             walkBudgetMins: number | string;
@@ -470,6 +504,14 @@ export interface components {
             detourToleranceMins: number | string;
             /** Format: double */
             fairnessWeight: number | string;
+        };
+        RefreshCandidateNodesResponse: {
+            /** Format: int32 */
+            participantsRefreshed: number | string;
+            /** Format: int32 */
+            candidateNodesBefore: number | string;
+            /** Format: int32 */
+            candidateNodesAfter: number | string;
         };
         ReturnLegRequest: {
             requests: components["schemas"]["ReturnRequestDto"][];
@@ -514,9 +556,10 @@ export interface components {
             latitude: number | string;
             /** Format: uuid */
             candidateNodeId: string;
+            nodeKind: components["schemas"]["CandidateNodeKindDto"];
             /** Format: date-time */
             estimatedArrival: string;
-            pickups: string[];
+            pickups: components["schemas"]["PickupLegDto"][];
         };
         TollSegmentDto: {
             /** Format: uuid */
@@ -621,6 +664,35 @@ export interface operations {
         responses: {
             /** @description OK */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RefreshCandidateNodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tripId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshCandidateNodesResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
