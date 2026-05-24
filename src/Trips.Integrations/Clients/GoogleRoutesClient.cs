@@ -53,8 +53,11 @@ internal sealed class GoogleRoutesClient : IGoogleRoutesClient
 
         var request = new MatrixRequest
         {
-            Origins = origins.Select(BuildWaypoint).ToList(),
-            Destinations = destinations.Select(BuildWaypoint).ToList(),
+            // computeRouteMatrix wraps each endpoint in a RouteMatrixOrigin/Destination whose
+            // payload is under a `waypoint` field — unlike computeRoutes, which takes a bare
+            // waypoint for `origin`/`destination`. Sending the bare form here yields a 400.
+            Origins = origins.Select(BuildMatrixWaypoint).ToList(),
+            Destinations = destinations.Select(BuildMatrixWaypoint).ToList(),
             TravelMode = "DRIVE",
             RoutingPreference = "TRAFFIC_AWARE",
         };
@@ -182,6 +185,8 @@ internal sealed class GoogleRoutesClient : IGoogleRoutesClient
         },
     };
 
+    private static RouteMatrixWaypoint BuildMatrixWaypoint(Point p) => new() { Waypoint = BuildWaypoint(p) };
+
     private static Point PointFromLatLng(LatLngLocation? loc)
     {
         if (loc?.LatLng is null)
@@ -219,10 +224,16 @@ internal sealed class GoogleRoutesClient : IGoogleRoutesClient
 
     private sealed class MatrixRequest
     {
-        public List<Waypoint>? Origins { get; set; }
-        public List<Waypoint>? Destinations { get; set; }
+        public List<RouteMatrixWaypoint>? Origins { get; set; }
+        public List<RouteMatrixWaypoint>? Destinations { get; set; }
         public string? TravelMode { get; set; }
         public string? RoutingPreference { get; set; }
+    }
+
+    /// <summary>computeRouteMatrix origin/destination envelope — the waypoint nests under a field.</summary>
+    private sealed class RouteMatrixWaypoint
+    {
+        public Waypoint? Waypoint { get; set; }
     }
 
     private sealed class RoutesRequest
