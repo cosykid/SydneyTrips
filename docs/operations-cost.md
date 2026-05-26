@@ -98,16 +98,54 @@ If OSRM is configured but unavailable, the planning matrix call fails and
 run — a bounded, free degradation. It is **not** silently re-routed to Google, by design: that would
 re-introduce exactly the surprise cost we're removing.
 
+## Which Google APIs the app uses (and which key)
+
+There are **two** API keys with different scopes. Enable the APIs at the project level, then restrict
+each key to only the subset it actually calls.
+
+**Backend key — `Integrations:Google:ApiKey`** (server-side; restrict by IP):
+
+| API | Called by | Needed? |
+| --- | --- | --- |
+| **Routes API** | `GoogleRoutesClient` — `computeRouteMatrix` (planning) + `computeRoutes` (locked-solution polyline) | Required |
+| **Geocoding API** | `GoogleGeocodingClient` (`maps/api/geocode/json`) | Only if `Integrations:Geocoding:Provider=google`; the default is Nominatim, so usually **not** |
+
+**Frontend key — `NEXT_PUBLIC_GOOGLE_MAPS_KEY`** (browser; restrict by HTTP referrer):
+
+| API | Called by | Needed? |
+| --- | --- | --- |
+| **Maps JavaScript API** | `PlanMap` / `LiveMap` / `MapBackdrop` vector maps | For real maps |
+| **Places API (New)** | `PlaceAutocomplete` — address search in the create-trip + participant forms | For address autocomplete |
+| **Routes API** | `useRoutePolylines` → `Route.computeRoutes` client-side, for road-snapped driver paths | For snapped polylines |
+
+The frontend also needs a **Map ID** (Console → Map Management) for the vector maps; the code defaults
+to `"DEMO_MAP_ID"` for dev — create a real vector Map ID (`NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`) for
+production.
+
+> The ~A$400 incident was **only** the backend Route Matrix — the runaway this doc's code changes
+> target. The frontend key has its own, smaller spend the OSRM/cache work does **not** touch (it is
+> browser-side): dynamic Maps JS loads, Places Autocomplete (billed per session/request — adds up with
+> heavy typing), and client-side `computeRoutes` (one call per driver route per plan render, cached by
+> a route hash so re-renders are cheap). Cap the frontend key's per-API quotas too, not just the
+> backend Route Matrix. Both frontend features degrade gracefully without a key (maps → the SVG
+> `MapFallback`; autocomplete → a plain text input), so the app still runs.
+>
+> Follow-up worth doing: the backend already computes routes in `SolutionPostprocessor`, and the
+> frontend calls `computeRoutes` again for the same polylines — serving the backend geometry to the
+> frontend would drop the client-side Routes calls entirely.
+
 ## Setting up a fresh GCP account (do these before wiring the key)
 
 After a trial account is exhausted you cannot un-exhaust it; a new account starts a new free trial.
 Before you put the new key anywhere the app can call it, set the guardrails — otherwise a cold cache
 or a runaway loop spends the new trial the same way.
 
-1. **Enable only the APIs you use** — Routes API and (if `Geocoding:Provider=google`) Geocoding API.
-   Nothing else.
-2. **Restrict the key** (Credentials → the key): *API restrictions* to just those APIs, plus an
-   *application restriction* (IP/referrer) so a leaked key can't be used elsewhere.
+1. **Enable only the APIs each key uses** — see *Which Google APIs the app uses* above. Backend key:
+   Routes API (+ Geocoding API only if you use Google geocoding). Frontend key adds Maps JavaScript
+   API and Places API (New). Nothing beyond what each key calls.
+2. **Restrict each key** (Credentials → the key): *API restrictions* to just that key's subset, plus
+   an *application restriction* — IP for the backend key, HTTP referrer for the browser key — so a
+   leaked key can't be used elsewhere.
 3. **Budget alert** (Billing → Budgets & alerts) — see below. Notifies; does not stop spend.
 4. **Hard quota cap** on the Route Matrix element/request quotas — see below. This is the actual
    spend ceiling.
