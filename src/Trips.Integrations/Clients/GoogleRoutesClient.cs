@@ -41,6 +41,7 @@ internal sealed class GoogleRoutesClient : IGoogleRoutesClient
     public async Task<double[,]> ComputeRouteMatrixAsync(
         IReadOnlyList<Point> origins,
         IReadOnlyList<Point> destinations,
+        bool trafficAware,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(origins);
@@ -59,7 +60,10 @@ internal sealed class GoogleRoutesClient : IGoogleRoutesClient
             Origins = origins.Select(BuildMatrixWaypoint).ToList(),
             Destinations = destinations.Select(BuildMatrixWaypoint).ToList(),
             TravelMode = "DRIVE",
-            RoutingPreference = "TRAFFIC_AWARE",
+            // TRAFFIC_AWARE moves the call onto the pricier "Pro" SKU; TRAFFIC_UNAWARE keeps it on
+            // the cheaper "Essentials" SKU. Only the live ETA path asks for traffic — see the
+            // trafficAware doc on IGoogleRoutesClient.
+            RoutingPreference = trafficAware ? "TRAFFIC_AWARE" : "TRAFFIC_UNAWARE",
         };
 
         using var scope = _logger.BeginScope(new Dictionary<string, object?>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using Trips.Core.Abstractions;
@@ -10,6 +11,15 @@ namespace Trips.Integrations.Caching;
 /// benefit from caching — matrices because they are called every optimisation run, routes
 /// because Google's pricing makes repeat calls expensive.
 /// </summary>
+/// <remarks>
+/// The matrix is cached <em>per origin→destination pair</em> rather than as a whole grid. Google
+/// bills per element (origins × destinations), so the goal is to bill each distinct pair at most
+/// once: two trips that share a leg (e.g. both run Chatswood→CBD) reuse it, and a re-plan that adds
+/// one node only pays for that node's new row and column instead of recomputing the whole matrix.
+/// Keys snap coordinates to <see cref="IntegrationCacheOptions.MatrixSnapDecimals"/> so near-identical
+/// pickups collapse to one entry, and carry the traffic flag so live-traffic ETAs never collide with
+/// (or pollute the long TTL of) the planner's free-flow durations.
+/// </remarks>
 internal sealed class CachingGoogleRoutesClient : IGoogleRoutesClient
 {
     private readonly IGoogleRoutesClient _inner;
@@ -29,26 +39,99 @@ internal sealed class CachingGoogleRoutesClient : IGoogleRoutesClient
     public async Task<double[,]> ComputeRouteMatrixAsync(
         IReadOnlyList<Point> origins,
         IReadOnlyList<Point> destinations,
+        bool trafficAware,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(origins);
         ArgumentNullException.ThrowIfNull(destinations);
 
-        var key = CacheKey.Build("google:matrix",
-            origins.Count,
-            destinations.Count,
-            string.Join(';', origins.Select(p => CacheKey.Build("o", p))),
-            string.Join(';', destinations.Select(p => CacheKey.Build("d", p))));
-
-        var cached = await _cache.GetAsync<CachedMatrix>(key, ct).ConfigureAwait(false);
-        if (cached is not null && cached.Rows == origins.Count && cached.Cols == destinations.Count)
+        var result = new double[origins.Count, destinations.Count];
+        if (origins.Count == 0 || destinations.Count == 0)
         {
-            return cached.ToMatrix();
+            return result;
         }
 
-        var fresh = await _inner.ComputeRouteMatrixAsync(origins, destinations, ct).ConfigureAwait(false);
-        await _cache.SetAsync(key, CachedMatrix.From(fresh), _options.RouteMatrixTtl, ct).ConfigureAwait(false);
-        return fresh;
+        var ttl = trafficAware ? _options.TrafficAwareMatrixTtl : _options.RouteMatrixTtl;
+
+        // Sweep the cache one pair at a time, filling what we can and recording the misses per
+        // origin row. Sizes here are small (a single trip's node-set), so sequential gets are fine.
+        var missesByOrigin = new Dictionary<int, List<int>>();
+        for (var i = 0; i < origins.Count; i++)
+        {
+            for (var j = 0; j < destinations.Count; j++)
+            {
+                var cached = await _cache.GetAsync<PairValue>(PairKey(origins[i], destinations[j], trafficAware), ct).ConfigureAwait(false);
+                if (cached is not null)
+                {
+                    result[i, j] = cached.Minutes;
+                }
+                else if (missesByOrigin.TryGetValue(i, out var list))
+                {
+                    list.Add(j);
+                }
+                else
+                {
+                    missesByOrigin[i] = new List<int> { j };
+                }
+            }
+        }
+
+        // Fully served from cache — zero Google elements billed.
+        if (missesByOrigin.Count == 0)
+        {
+            return result;
+        }
+
+        // Group origins that miss the *same* set of destinations so each group is a single upstream
+        // call billing exactly its missing cells (no over-fetch of already-cached pairs). A cold
+        // matrix is one group (everything missing); adding one node to a square matrix is two (the
+        // new row, and the new column shared by every pre-existing origin).
+        foreach (var group in missesByOrigin.GroupBy(kvp => string.Join(',', kvp.Value)))
+        {
+            ct.ThrowIfCancellationRequested();
+            var originIdx = group.Select(kvp => kvp.Key).ToList();
+            var destIdx = group.First().Value; // identical within the group by construction of the key
+            var subOrigins = originIdx.Select(i => origins[i]).ToList();
+            var subDests = destIdx.Select(j => destinations[j]).ToList();
+
+            var sub = await _inner.ComputeRouteMatrixAsync(subOrigins, subDests, trafficAware, ct).ConfigureAwait(false);
+
+            for (var a = 0; a < originIdx.Count; a++)
+            {
+                for (var b = 0; b < destIdx.Count; b++)
+                {
+                    var v = sub[a, b];
+                    result[originIdx[a], destIdx[b]] = v;
+                    // Only cache routable values. Caching a PositiveInfinity (Google couldn't route
+                    // the pair) would pin "unroutable" for the whole TTL even after the data improves.
+                    if (double.IsFinite(v))
+                    {
+                        await _cache.SetAsync(
+                            PairKey(origins[originIdx[a]], destinations[destIdx[b]], trafficAware),
+                            new PairValue(v),
+                            ttl,
+                            ct).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Per-pair cache key: snapped origin + snapped destination + traffic flag. Coordinates are
+    /// rounded to <see cref="IntegrationCacheOptions.MatrixSnapDecimals"/> before hashing.
+    /// </summary>
+    private string PairKey(Point origin, Point dest, bool trafficAware)
+    {
+        var dp = _options.MatrixSnapDecimals;
+        return CacheKey.Build("google:matrixpair",
+            Math.Round(origin.Y, dp).ToString(CultureInfo.InvariantCulture),
+            Math.Round(origin.X, dp).ToString(CultureInfo.InvariantCulture),
+            Math.Round(dest.Y, dp).ToString(CultureInfo.InvariantCulture),
+            Math.Round(dest.X, dp).ToString(CultureInfo.InvariantCulture),
+            trafficAware ? "t" : "f");
     }
 
     public async Task<GoogleRoutesResult> ComputeRoutesAsync(
@@ -81,36 +164,8 @@ internal sealed class CachingGoogleRoutesClient : IGoogleRoutesClient
 
     // ----- Cache shapes -----
 
-    private sealed record CachedMatrix(int Rows, int Cols, double[] Flat)
-    {
-        public static CachedMatrix From(double[,] m)
-        {
-            var rows = m.GetLength(0);
-            var cols = m.GetLength(1);
-            var flat = new double[rows * cols];
-            for (int i = 0; i < rows; i++)
-            {
-                for (int j = 0; j < cols; j++)
-                {
-                    flat[i * cols + j] = m[i, j];
-                }
-            }
-            return new CachedMatrix(rows, cols, flat);
-        }
-
-        public double[,] ToMatrix()
-        {
-            var m = new double[Rows, Cols];
-            for (int i = 0; i < Rows; i++)
-            {
-                for (int j = 0; j < Cols; j++)
-                {
-                    m[i, j] = Flat[i * Cols + j];
-                }
-            }
-            return m;
-        }
-    }
+    /// <summary>One cached origin→destination driving time, in minutes.</summary>
+    private sealed record PairValue(double Minutes);
 
     private sealed record SerialisedPoint(double Longitude, double Latitude)
     {

@@ -9,7 +9,7 @@ namespace Trips.Api.Stubs;
 /// </summary>
 internal sealed class StubGoogleRoutesClient : IGoogleRoutesClient
 {
-    public Task<double[,]> ComputeRouteMatrixAsync(IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, CancellationToken ct)
+    public Task<double[,]> ComputeRouteMatrixAsync(IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, bool trafficAware, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(origins);
         ArgumentNullException.ThrowIfNull(destinations);

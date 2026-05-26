@@ -185,7 +185,9 @@ public sealed class OptimisationRunner : BackgroundService
                 ct.ThrowIfCancellationRequested();
                 var count = Math.Min(maxOriginsPerCall, n - start);
                 var originBatch = points.GetRange(start, count);
-                var sub = await routes.ComputeRouteMatrixAsync(originBatch, points, ct).ConfigureAwait(false);
+                // trafficAware: false — planning solves against a future departure, so a live-traffic
+                // snapshot taken now is noise; free-flow keeps us on the cheaper SKU and caches for days.
+                var sub = await routes.ComputeRouteMatrixAsync(originBatch, points, trafficAware: false, ct).ConfigureAwait(false);
                 for (var oi = 0; oi < count; oi++)
                 {
                     for (var di = 0; di < n; di++)

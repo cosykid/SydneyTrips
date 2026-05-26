@@ -44,6 +44,9 @@ public static class DependencyInjection
         services.AddOptions<GoogleRoutesOptions>()
             .Bind(configuration.GetSection(GoogleRoutesOptions.SectionName))
             .ValidateOnStart();
+        services.AddOptions<OsrmOptions>()
+            .Bind(configuration.GetSection(OsrmOptions.SectionName))
+            .ValidateOnStart();
         services.AddOptions<GeocodingOptions>()
             .Bind(configuration.GetSection(GeocodingOptions.SectionName))
             .ValidateOnStart();
@@ -63,7 +66,7 @@ public static class DependencyInjection
         {
             AddTfNsw(services);
         }
-        AddGoogleRoutes(services);
+        AddGoogleRoutes(services, configuration);
         AddGeocoding(services, configuration);
 
         return services;
@@ -75,13 +78,31 @@ public static class DependencyInjection
         var connString = cacheSection["RedisConnectionString"];
         if (string.IsNullOrWhiteSpace(connString))
         {
-            // No Redis configured — decorators become a pass-through.
+            // Fall back to the shared ConnectionStrings:Redis — the same instance the SignalR
+            // backplane already uses. Without this fallback the integration cache silently became a
+            // no-op whenever only ConnectionStrings:Redis was set (the common case: that's all
+            // appsettings.json defines), so every Google Routes matrix call paid full freight,
+            // uncached, every run. The dedicated Integrations:Cache:RedisConnectionString still wins
+            // when set, for environments that want the cache on a different instance.
+            connString = configuration.GetConnectionString("Redis");
+        }
+        if (string.IsNullOrWhiteSpace(connString))
+        {
+            // No Redis configured anywhere — decorators become a pass-through.
             services.TryAddSingleton<IIntegrationCache, NoopIntegrationCache>();
             return;
         }
 
         services.TryAddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(connString));
+        {
+            // AbortOnConnectFail=false: the cache is an optimisation, not a hard dependency, so a
+            // missing/unreachable Redis must not crash API startup. RedisIntegrationCache already
+            // swallows per-call failures and falls back to upstream, so a degraded Redis degrades to
+            // "no cache" rather than an outage.
+            var redisOptions = ConfigurationOptions.Parse(connString!);
+            redisOptions.AbortOnConnectFail = false;
+            return ConnectionMultiplexer.Connect(redisOptions);
+        });
         services.TryAddSingleton<IIntegrationCache, RedisIntegrationCache>();
     }
 
@@ -110,7 +131,7 @@ public static class DependencyInjection
         });
     }
 
-    private static void AddGoogleRoutes(IServiceCollection services)
+    private static void AddGoogleRoutes(IServiceCollection services, IConfiguration configuration)
     {
         services.AddHttpClient<GoogleRoutesClient>(GoogleRoutesClient.HttpClientName, (sp, http) =>
             {
@@ -126,12 +147,34 @@ public static class DependencyInjection
             })
             .AddStandardResilienceHandler(ConfigureResilience);
 
+        // When a self-hosted OSRM is configured, wire its HttpClient so the planner's free-flow
+        // matrix is served locally at zero marginal cost instead of Google's per-element Route Matrix.
+        var osrm = new OsrmOptions();
+        configuration.GetSection(OsrmOptions.SectionName).Bind(osrm);
+        if (osrm.Enabled)
+        {
+            services.AddHttpClient<OsrmRoutesClient>(OsrmRoutesClient.HttpClientName, (sp, http) =>
+                {
+                    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OsrmOptions>>().Value;
+                    http.BaseAddress = new Uri(opts.BaseUrl, UriKind.Absolute);
+                    http.Timeout = TimeSpan.FromSeconds(opts.RequestTimeoutSeconds);
+                    http.DefaultRequestHeaders.Accept.Clear();
+                    http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                })
+                .AddStandardResilienceHandler(ConfigureResilience);
+        }
+
         services.AddSingleton<IGoogleRoutesClient>(sp =>
         {
-            var live = sp.GetRequiredService<GoogleRoutesClient>();
+            var google = sp.GetRequiredService<GoogleRoutesClient>();
+            // HybridRoutesClient sends free-flow (planning) matrices to OSRM and keeps traffic-aware
+            // ETAs + polylines on Google. With no OSRM configured the free-flow source is null and the
+            // hybrid forwards everything to Google — identical to the pre-OSRM behaviour.
+            IFreeFlowMatrixClient? freeFlow = osrm.Enabled ? sp.GetRequiredService<OsrmRoutesClient>() : null;
+            var hybrid = new HybridRoutesClient(google, freeFlow);
             var cache = sp.GetRequiredService<IIntegrationCache>();
             var cacheOptions = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<IntegrationCacheOptions>>();
-            return new CachingGoogleRoutesClient(live, cache, cacheOptions);
+            return new CachingGoogleRoutesClient(hybrid, cache, cacheOptions);
         });
     }
 

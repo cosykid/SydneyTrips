@@ -107,7 +107,9 @@ public sealed class EtaService
         double[,] matrix;
         try
         {
-            matrix = await _routes.ComputeRouteMatrixAsync(new[] { origin }, destinations, ct).ConfigureAwait(false);
+            // trafficAware: true — the trip is happening now, so live traffic is the whole point of
+            // recomputing the ETA. This is the one path that should pay for the pricier matrix SKU.
+            matrix = await _routes.ComputeRouteMatrixAsync(new[] { origin }, destinations, trafficAware: true, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

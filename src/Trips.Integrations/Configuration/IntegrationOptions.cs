@@ -48,6 +48,35 @@ public sealed class GoogleRoutesOptions
 }
 
 /// <summary>
+/// Configuration for a self-hosted OSRM (Open Source Routing Machine) instance used for the
+/// <em>planning</em> travel-time matrix. Bound from <c>Integrations:Osrm</c>.
+/// </summary>
+/// <remarks>
+/// OSRM serves free-flow driving durations from OpenStreetMap data at zero marginal cost — exactly
+/// what the planner needs (it solves against a future departure, so live traffic is noise). When a
+/// <see cref="BaseUrl"/> is configured the free-flow matrix is routed here instead of Google's
+/// per-element Route Matrix; Google is then reserved for the live, traffic-aware ETA path only.
+/// Leave <see cref="BaseUrl"/> empty to disable OSRM and route everything through Google (the
+/// zero-ops default). See <c>docs/operations-cost.md</c> for the one-time data-prep steps.
+/// </remarks>
+public sealed class OsrmOptions
+{
+    public const string SectionName = "Integrations:Osrm";
+
+    /// <summary>
+    /// Root URL of the <c>osrm-routed</c> HTTP server (e.g. <c>http://localhost:5001</c>). Empty
+    /// disables OSRM — the planner then falls back to Google's matrix, as before.
+    /// </summary>
+    public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>Outbound request timeout in seconds.</summary>
+    public int RequestTimeoutSeconds { get; set; } = 15;
+
+    /// <summary>True when a base URL is configured and OSRM should be wired in.</summary>
+    public bool Enabled => !string.IsNullOrWhiteSpace(BaseUrl);
+}
+
+/// <summary>
 /// Configuration for the geocoding client. Bound from <c>Integrations:Geocoding</c>.
 /// </summary>
 public sealed class GeocodingOptions
@@ -87,8 +116,25 @@ public sealed class IntegrationCacheOptions
     /// <summary>Prefix on every Redis key so multiple environments can share an instance.</summary>
     public string KeyPrefix { get; set; } = "trips:integrations:";
 
-    /// <summary>TTL for route matrix responses — high cost calls, slow-to-change data.</summary>
-    public TimeSpan RouteMatrixTtl { get; set; } = TimeSpan.FromHours(1);
+    /// <summary>
+    /// TTL for free-flow (traffic-unaware) route matrix pairs — the planning path. These are
+    /// stable geography (the driving time A→B only changes when roads change), so we keep them for
+    /// a long time: every reuse is one fewer billed Google element.
+    /// </summary>
+    public TimeSpan RouteMatrixTtl { get; set; } = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// TTL for traffic-aware route matrix pairs — the live ETA path. Short, because the whole point
+    /// of asking for traffic is that it changes minute to minute; a long TTL would serve stale ETAs.
+    /// </summary>
+    public TimeSpan TrafficAwareMatrixTtl { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Decimal places coordinates are rounded to when building a per-pair matrix cache key.
+    /// 4 dp ≈ 11 m — below what the router can resolve, so two near-identical pickups collapse to
+    /// one cache entry, sharply raising the hit rate without changing any returned duration.
+    /// </summary>
+    public int MatrixSnapDecimals { get; set; } = 4;
 
     /// <summary>TTL for compute-routes calls.</summary>
     public TimeSpan ComputeRoutesTtl { get; set; } = TimeSpan.FromHours(1);

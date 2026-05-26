@@ -259,7 +259,8 @@ Equivalent env-var form (double-underscore separates config sections): `Integrat
 | Key | Notes |
 | --- | --- |
 | `Integrations:TfNsw:ApiKey`  | Register at <https://opendata.transport.nsw.gov.au>, subscribe to Trip Planner v2, Coordinate Request, Departure, GTFS-Realtime. |
-| `Integrations:Google:ApiKey` | Routes API + Geocoding API enabled; set billing alerts (matrix calls add up). |
+| `Integrations:Google:ApiKey` | Routes API + Geocoding API enabled. The Route Matrix is billed **per element** (origins × destinations) and is the dominant cost — see [`docs/operations-cost.md`](docs/operations-cost.md) for the full cost model: planning runs on free-flow durations, cached per-pair, and (with OSRM below) off Google entirely; plus the budget alert + quota cap to set **before** wiring a key. |
+| `Integrations:Osrm:BaseUrl` | Optional. Point at a self-hosted OSRM (e.g. `http://localhost:5001`) to serve the **planning** travel-time matrix locally at zero marginal cost instead of Google's per-element Route Matrix; Google is then used only for live ETAs + the locked-solution polyline. Empty = disabled (Google handles everything). Setup in [`docs/operations-cost.md`](docs/operations-cost.md). |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Public Mapbox token in `web/.env.local`. The map components fall back to a placeholder card if unset, so this is also optional for getting the app running. |
 
 ### Demo seed + screenshots

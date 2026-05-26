@@ -36,6 +36,38 @@ services:
       timeout: 5s
       retries: 10
 
+  # Self-hosted routing engine for the *planning* travel-time matrix (free-flow driving durations).
+  # This is what takes the project's dominant external cost — Google's per-element Route Matrix — to
+  # ~zero marginal cost. Opt-in via the "routing" profile so a plain `docker compose up` doesn't try
+  # to start it before the map data exists:
+  #
+  #   docker compose -f infra/docker-compose.yml --profile routing up -d osrm
+  #
+  # One-time data prep (run from infra/, fills ./osrm with region.osrm*). Pick the smallest extract
+  # that covers your trips — a Sydney/NSW clip beats the whole continent for build time and RAM:
+  #
+  #   mkdir -p osrm && cd osrm
+  #   curl -L -o region.osm.pbf https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf
+  #   IMG=ghcr.io/project-osrm/osrm-backend:latest
+  #   docker run --rm -v "$PWD:/data" $IMG osrm-extract   -p /opt/car.lua /data/region.osm.pbf
+  #   docker run --rm -v "$PWD:/data" $IMG osrm-partition  /data/region.osrm
+  #   docker run --rm -v "$PWD:/data" $IMG osrm-customize  /data/region.osrm
+  #
+  # Then point the API at it:  Integrations:Osrm:BaseUrl = http://localhost:5001
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    container_name: sydneytrips-osrm
+    profiles: ["routing"]
+    restart: unless-stopped
+    # --max-table-size must exceed the largest origins+destinations a single /table call sends;
+    # 2000 comfortably covers any realistic trip's node-set.
+    command: osrm-routed --algorithm mld --max-table-size 2000 /data/region.osrm
+    ports:
+      # Host 5001 (the API owns 5000); OSRM listens on 5000 inside the container.
+      - "5001:5000"
+    volumes:
+      - ./osrm:/data
+
 volumes:
   pg-data:
   redis-data:

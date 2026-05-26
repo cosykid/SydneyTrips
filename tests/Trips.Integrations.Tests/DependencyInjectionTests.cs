@@ -37,6 +37,42 @@ public sealed class DependencyInjectionTests
     }
 
     [Fact]
+    public void Uses_redis_cache_when_only_connectionstrings_redis_is_set()
+    {
+        // Regression for the silent no-op bug: the integration cache read only
+        // Integrations:Cache:RedisConnectionString, which appsettings never set, so it stayed a
+        // no-op even though ConnectionStrings:Redis pointed at a live instance. It must now fall back.
+        var services = BuildServices(new Dictionary<string, string?>
+        {
+            // Dead port + abortConnect (set in code) means Connect returns without a live server.
+            ["ConnectionStrings:Redis"] = "localhost:63999,connectTimeout=250",
+        });
+
+        services.GetRequiredService<IIntegrationCache>()
+            .Should().BeOfType<RedisIntegrationCache>();
+    }
+
+    [Fact]
+    public void Does_not_wire_osrm_when_base_url_is_unset()
+    {
+        var services = BuildServices(new Dictionary<string, string?>());
+        services.GetService<Trips.Integrations.Clients.OsrmRoutesClient>().Should().BeNull();
+    }
+
+    [Fact]
+    public void Wires_osrm_when_base_url_is_configured()
+    {
+        var services = BuildServices(new Dictionary<string, string?>
+        {
+            ["Integrations:Osrm:BaseUrl"] = "http://localhost:5001",
+        });
+
+        services.GetService<Trips.Integrations.Clients.OsrmRoutesClient>()
+            .Should().NotBeNull("a configured OSRM base URL should register the free-flow matrix client");
+        services.GetService<IGoogleRoutesClient>().Should().NotBeNull();
+    }
+
+    [Fact]
     public void Geocoding_provider_google_picks_google_implementation()
     {
         var services = BuildServices(new Dictionary<string, string?>

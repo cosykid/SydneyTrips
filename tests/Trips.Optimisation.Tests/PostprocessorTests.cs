@@ -87,7 +87,7 @@ internal sealed class FakeRoutesClient : IGoogleRoutesClient
         _legMins = legMins;
     }
 
-    public Task<double[,]> ComputeRouteMatrixAsync(IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, CancellationToken ct)
+    public Task<double[,]> ComputeRouteMatrixAsync(IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, bool trafficAware, CancellationToken ct)
         => throw new NotImplementedException("postprocessor doesn't call matrix");
 
     public Task<GoogleRoutesResult> ComputeRoutesAsync(Point origin, Point destination, IReadOnlyList<Point> waypoints, bool optimizeWaypointOrder, CancellationToken ct)

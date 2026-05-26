@@ -133,8 +133,8 @@ public sealed class EtaServiceTests
         }
 
         var routes = new Mock<IGoogleRoutesClient>();
-        routes.Setup(r => r.ComputeRouteMatrixAsync(It.IsAny<IReadOnlyList<Point>>(), It.IsAny<IReadOnlyList<Point>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, CancellationToken _) =>
+        routes.Setup(r => r.ComputeRouteMatrixAsync(It.IsAny<IReadOnlyList<Point>>(), It.IsAny<IReadOnlyList<Point>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, bool _, CancellationToken _) =>
             {
                 var m = new double[origins.Count, destinations.Count];
                 for (var i = 0; i < origins.Count; i++)

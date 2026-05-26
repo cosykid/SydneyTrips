@@ -31,6 +31,7 @@ public sealed class GoogleRoutesRequestShapeTests
         await client.ComputeRouteMatrixAsync(
             new[] { Geom.CreatePoint(new Coordinate(151.0, -33.8)) },
             new[] { Geom.CreatePoint(new Coordinate(151.1, -33.9)) },
+            trafficAware: false,
             CancellationToken.None);
 
         using var doc = JsonDocument.Parse(handler.LastBody!);
@@ -46,6 +47,28 @@ public sealed class GoogleRoutesRequestShapeTests
             "the bare-waypoint form (location at the top level) is the bug we're guarding against");
 
         root.GetProperty("destinations")[0].TryGetProperty("waypoint", out _).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false, "TRAFFIC_UNAWARE")]
+    [InlineData(true, "TRAFFIC_AWARE")]
+    public async Task ComputeRouteMatrix_routing_preference_tracks_trafficAware(bool trafficAware, string expected)
+    {
+        // Guards the cost lever: the planner (trafficAware:false) must request TRAFFIC_UNAWARE so the
+        // call bills on the cheaper "Essentials" SKU, not "Pro". Only the live ETA path opts into traffic.
+        var handler = new CapturingHandler("[{\"originIndex\":0,\"destinationIndex\":0,\"duration\":\"60s\"}]");
+        var client = new GoogleRoutesClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://routes.googleapis.test") },
+            NullLogger<GoogleRoutesClient>.Instance);
+
+        await client.ComputeRouteMatrixAsync(
+            new[] { Geom.CreatePoint(new Coordinate(151.0, -33.8)) },
+            new[] { Geom.CreatePoint(new Coordinate(151.1, -33.9)) },
+            trafficAware,
+            CancellationToken.None);
+
+        using var doc = JsonDocument.Parse(handler.LastBody!);
+        doc.RootElement.GetProperty("routingPreference").GetString().Should().Be(expected);
     }
 
     private sealed class CapturingHandler : HttpMessageHandler

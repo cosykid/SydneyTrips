@@ -25,7 +25,7 @@ public sealed class GoogleRoutesClientTests : MockServerTestBase
             Geom.CreatePoint(new Coordinate(151.2832, -33.8995)),
         };
 
-        var matrix = await client.ComputeRouteMatrixAsync(origins, destinations, CancellationToken.None);
+        var matrix = await client.ComputeRouteMatrixAsync(origins, destinations, trafficAware: false, CancellationToken.None);
 
         matrix.GetLength(0).Should().Be(2);
         matrix.GetLength(1).Should().Be(2);

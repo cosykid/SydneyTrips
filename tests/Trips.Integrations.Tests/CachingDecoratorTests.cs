@@ -97,11 +97,75 @@ public sealed class CachingDecoratorTests
         var origins = new[] { Geom.CreatePoint(new Coordinate(151.2073, -33.8730)) };
         var destinations = new[] { Geom.CreatePoint(new Coordinate(151.2796, -33.8908)) };
 
-        var first = await decorator.ComputeRouteMatrixAsync(origins, destinations, CancellationToken.None);
-        var second = await decorator.ComputeRouteMatrixAsync(origins, destinations, CancellationToken.None);
+        var first = await decorator.ComputeRouteMatrixAsync(origins, destinations, trafficAware: false, CancellationToken.None);
+        var second = await decorator.ComputeRouteMatrixAsync(origins, destinations, trafficAware: false, CancellationToken.None);
 
         inner.MatrixCalls.Should().Be(1);
         second[0, 0].Should().Be(first[0, 0]);
+    }
+
+    [Fact]
+    public async Task GoogleRoutes_matrix_reuses_shared_pairs_across_trips()
+    {
+        // Two different node-sets that happen to share one origin→destination leg. The whole-matrix
+        // cache used to miss entirely on the second call (different point set ⇒ different key); the
+        // per-pair cache bills the shared leg only once.
+        var inner = new CountingGoogleRoutes();
+        var cache = new InMemoryIntegrationCache();
+        var decorator = new CachingGoogleRoutesClient(inner, cache, CacheOptions);
+
+        var a = Geom.CreatePoint(new Coordinate(151.2073, -33.8730)); // shared origin
+        var cbd = Geom.CreatePoint(new Coordinate(151.2073, -33.8688)); // shared destination
+        var b = Geom.CreatePoint(new Coordinate(151.7800, -33.7500)); // only in trip 2
+
+        await decorator.ComputeRouteMatrixAsync(new[] { a }, new[] { cbd }, trafficAware: false, CancellationToken.None);
+        inner.MatrixElements.Should().Be(1, "cold: the single a→cbd pair is fetched");
+
+        // Trip 2 needs a→cbd (cached) and b→cbd (new). Only the new pair should reach Google.
+        await decorator.ComputeRouteMatrixAsync(new[] { a, b }, new[] { cbd }, trafficAware: false, CancellationToken.None);
+        inner.MatrixElements.Should().Be(2, "a→cbd is served from cache; only b→cbd is billed");
+    }
+
+    [Fact]
+    public async Task GoogleRoutes_matrix_replan_only_bills_the_added_node()
+    {
+        // The #5 case: re-solving after one node is added to a square matrix. A 2×2 matrix grows to
+        // 3×3 (9 cells), but 4 are already cached — only the new row + column (5 cells) is billed.
+        var inner = new CountingGoogleRoutes();
+        var cache = new InMemoryIntegrationCache();
+        var decorator = new CachingGoogleRoutesClient(inner, cache, CacheOptions);
+
+        var n0 = Geom.CreatePoint(new Coordinate(151.20, -33.87));
+        var n1 = Geom.CreatePoint(new Coordinate(151.25, -33.89));
+        var n2 = Geom.CreatePoint(new Coordinate(151.78, -33.75)); // the added node
+
+        var two = new[] { n0, n1 };
+        await decorator.ComputeRouteMatrixAsync(two, two, trafficAware: false, CancellationToken.None);
+        inner.MatrixElements.Should().Be(4, "cold 2×2");
+
+        inner.MatrixElements = 0;
+        var three = new[] { n0, n1, n2 };
+        await decorator.ComputeRouteMatrixAsync(three, three, trafficAware: false, CancellationToken.None);
+        inner.MatrixElements.Should().Be(5, "only n2's row (3) + column (2) are new; the original 4 are cached");
+    }
+
+    [Fact]
+    public async Task GoogleRoutes_matrix_separates_traffic_aware_from_free_flow()
+    {
+        // Live-ETA (traffic-aware) and planner (free-flow) durations for the same pair must not
+        // collide — they're different SKUs with different freshness, so they cache independently.
+        var inner = new CountingGoogleRoutes();
+        var cache = new InMemoryIntegrationCache();
+        var decorator = new CachingGoogleRoutesClient(inner, cache, CacheOptions);
+
+        var origins = new[] { Geom.CreatePoint(new Coordinate(151.2073, -33.8730)) };
+        var destinations = new[] { Geom.CreatePoint(new Coordinate(151.2796, -33.8908)) };
+
+        await decorator.ComputeRouteMatrixAsync(origins, destinations, trafficAware: false, CancellationToken.None);
+        await decorator.ComputeRouteMatrixAsync(origins, destinations, trafficAware: true, CancellationToken.None);
+
+        inner.MatrixCalls.Should().Be(2, "traffic-aware and free-flow are keyed separately");
+        inner.LastTrafficAware.Should().BeTrue();
     }
 
     [Fact]
@@ -225,15 +289,21 @@ public sealed class CachingDecoratorTests
     private sealed class CountingGoogleRoutes : IGoogleRoutesClient
     {
         public int MatrixCalls;
+        public int MatrixElements; // origins × destinations actually forwarded upstream (= billed)
+        public bool? LastTrafficAware;
         public int RoutesCalls;
 
-        public Task<double[,]> ComputeRouteMatrixAsync(IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, CancellationToken ct)
+        public Task<double[,]> ComputeRouteMatrixAsync(IReadOnlyList<Point> origins, IReadOnlyList<Point> destinations, bool trafficAware, CancellationToken ct)
         {
             MatrixCalls++;
+            MatrixElements += origins.Count * destinations.Count;
+            LastTrafficAware = trafficAware;
+            // Deterministic per-pair value keyed on coordinates so a pair returns the same minutes
+            // regardless of which call/sub-grid it arrives in — lets tests assert reuse correctness.
             var m = new double[origins.Count, destinations.Count];
             for (int i = 0; i < origins.Count; i++)
                 for (int j = 0; j < destinations.Count; j++)
-                    m[i, j] = 10 + i + j;
+                    m[i, j] = Math.Abs(origins[i].X - destinations[j].X) + Math.Abs(origins[i].Y - destinations[j].Y) + 1;
             return Task.FromResult(m);
         }
 
