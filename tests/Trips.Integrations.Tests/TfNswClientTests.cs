@@ -42,6 +42,23 @@ public sealed class TfNswClientTests : MockServerTestBase
     }
 
     [Fact]
+    public async Task TripPlanAsync_prefers_frequent_lightrail_over_faster_bus_ranked_first()
+    {
+        // EFA ranks the 343 bus first (and it is marginally faster in raw minutes), but the L3
+        // light rail is more frequent. The cost-based selection should pick the light rail.
+        var client = ClientFactory.TfNsw(Fixture.Servers);
+        var origin = Geom.CreatePoint(new Coordinate(151.1934, -33.9303));
+        var destination = Geom.CreatePoint(new Coordinate(151.2070, -33.8830));
+
+        var plan = await client.TripPlanAsync(origin, destination, new DateTimeOffset(2025, 6, 2, 8, 0, 0, TimeSpan.Zero), CancellationToken.None);
+
+        var ptLeg = plan.Legs.Should().ContainSingle(l => l.Mode != "walk").Subject;
+        ptLeg.Mode.Should().Be("lightrail");
+        ptLeg.RouteShortName.Should().Be("L3");
+        plan.Legs.Should().NotContain(l => l.RouteShortName == "343");
+    }
+
+    [Fact]
     public async Task CoordinateRequestAsync_returns_stops_ordered_by_distance()
     {
         var client = ClientFactory.TfNsw(Fixture.Servers);

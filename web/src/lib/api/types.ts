@@ -489,6 +489,10 @@ export interface components {
         PathDto: {
             coordinates: components["schemas"]["PathCoordinateDto"][];
         };
+        PathLegDto: {
+            mode: string;
+            path: components["schemas"]["PathDto"];
+        };
         PickupLegDto: {
             /** Format: uuid */
             participantId: string;
@@ -497,6 +501,7 @@ export interface components {
             /** Format: int32 */
             ptMins: number | string;
             path: null | components["schemas"]["PathDto"];
+            pathLegs?: null | components["schemas"]["PathLegDto"][];
         };
         PreferencesDto: {
             /** Format: int32 */

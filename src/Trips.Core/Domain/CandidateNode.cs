@@ -33,6 +33,14 @@ public sealed class CandidateNode
     /// </summary>
     public LineString? Path { get; private set; }
 
+    /// <summary>
+    /// The same home → hub journey as <see cref="Path"/>, but split into mode-tagged segments so
+    /// the map can colour each leg (walk / train / bus / ferry / light rail) distinctly. Null for
+    /// the Home node and for nodes generated against a stub or pre-feature cache; callers fall back
+    /// to the single-colour <see cref="Path"/> in that case.
+    /// </summary>
+    public IReadOnlyList<PathLeg>? PathLegs { get; private set; }
+
     private CandidateNode()
     {
         Location = default!;
@@ -47,7 +55,8 @@ public sealed class CandidateNode
         int ptMins,
         string? externalId = null,
         string? displayName = null,
-        LineString? path = null)
+        LineString? path = null,
+        IReadOnlyList<PathLeg>? pathLegs = null)
     {
         ArgumentNullException.ThrowIfNull(location);
         if (walkMins < 0)
@@ -69,6 +78,7 @@ public sealed class CandidateNode
         ExternalId = externalId;
         DisplayName = displayName;
         Path = path;
+        PathLegs = pathLegs;
     }
 
     /// <summary>Total minutes the participant pays to reach this node from home.</summary>

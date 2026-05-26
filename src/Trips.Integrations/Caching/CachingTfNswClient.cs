@@ -86,13 +86,41 @@ internal sealed class CachingTfNswClient : ITfNswClient
         public Point ToPoint() => Factory.CreatePoint(new Coordinate(Longitude, Latitude));
     }
 
-    private sealed record CachedJourneyLeg(string Mode, int DurationMins, SerialisedPoint Start, SerialisedPoint End, string? RouteShortName)
+    private sealed record CachedJourneyLeg(
+        string Mode,
+        int DurationMins,
+        SerialisedPoint Start,
+        SerialisedPoint End,
+        string? RouteShortName,
+        string? FromName,
+        string? ToName,
+        List<SerialisedPoint>? Polyline)
     {
         public static CachedJourneyLeg FromDto(TfNswJourneyLeg leg) =>
-            new(leg.Mode, leg.DurationMins, SerialisedPoint.From(leg.From), SerialisedPoint.From(leg.To), leg.RouteShortName);
+            new(
+                leg.Mode,
+                leg.DurationMins,
+                SerialisedPoint.From(leg.From),
+                SerialisedPoint.From(leg.To),
+                leg.RouteShortName,
+                leg.FromName,
+                leg.ToName,
+                // Round-trip the leg geometry and stop names through the cache. Dropping them (the
+                // original bug) meant any cache hit yielded legs with a null Polyline, which
+                // collapsed each candidate node's PT path to null and made the map draw crow-fly
+                // straight lines instead of the real route.
+                leg.Polyline?.Select(SerialisedPoint.From).ToList());
 
         public TfNswJourneyLeg ToDto() =>
-            new(Mode, DurationMins, Start.ToPoint(), End.ToPoint(), RouteShortName);
+            new(
+                Mode,
+                DurationMins,
+                Start.ToPoint(),
+                End.ToPoint(),
+                RouteShortName,
+                FromName,
+                ToName,
+                Polyline?.Select(p => p.ToPoint()).ToList());
     }
 
     private sealed record CachedTripPlan(List<CachedJourneyLeg> Legs, int TotalWalkMins, int TotalPtMins)

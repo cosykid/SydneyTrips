@@ -106,14 +106,19 @@ function LiveMapInner({
       style={{ width: "100%", height: "100%" }}
     >
       {route && path ? (
-        <GooglePolyline path={path} color={route.colour ?? "#1A73E8"} weight={6} />
+        <GooglePolyline
+          path={path}
+          color={route.colour ?? "#0E7C86"}
+          weight={6}
+          casing
+        />
       ) : null}
 
       {route?.stops.map((s, idx) => {
         const key = s.candidateNodeId ?? `stop-${idx}`;
         const arrived = Boolean(stopsArrived[key]);
         const highlighted = idx === highlightStopIndex;
-        const color = arrived ? "bg-[#34A853]" : highlighted ? "bg-[#FBBC04]" : "bg-[#1A73E8]";
+        const color = arrived ? "bg-[#34A853]" : highlighted ? "bg-[#FBBC04]" : "bg-[#0E7C86]";
         const size = highlighted ? "h-4 w-4" : "h-3 w-3";
         return (
           <AdvancedMarker
@@ -140,7 +145,7 @@ function LiveMapInner({
           title="Driver"
         >
           <div
-            className="bg-[#1A73E8] text-white flex h-8 w-8 items-center justify-center rounded-full shadow-lg ring-2 ring-white"
+            className="bg-[#0E7C86] text-white flex h-8 w-8 items-center justify-center rounded-full shadow-lg ring-2 ring-white"
             data-testid="driver-dot"
             aria-label="Driver position"
           >

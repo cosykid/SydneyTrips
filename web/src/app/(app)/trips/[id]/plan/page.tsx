@@ -9,5 +9,9 @@ interface Params {
 
 export default async function PlanPage({ params }: Params): Promise<React.JSX.Element> {
   const { id } = await params;
-  return <PlanCanvas tripId={id} />;
+  return (
+    <div className="pointer-events-auto h-full w-full">
+      <PlanCanvas tripId={id} />
+    </div>
+  );
 }

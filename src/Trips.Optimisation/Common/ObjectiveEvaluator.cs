@@ -19,6 +19,20 @@ public static class ObjectiveEvaluator
     public const double StopCost = 1.0;
 
     /// <summary>
+    /// Multiplier applied to <em>driver</em> travel minutes, on top of the user's DriveTime weight.
+    /// A minute of active driving (a person's time + a car on the road + congestion) is treated as
+    /// more costly than a minute of a passenger riding existing public transport — so the same
+    /// passenger-minutes term (walk + PT) competes against a deliberately heavier driving term.
+    ///
+    /// <para>Without this, driver minutes and passenger PT minutes are weighed 1:1, so passengers
+    /// only shift onto transit once the DriveTime slider is cranked to extremes; the premium makes
+    /// the trade flip at moderate slider positions. <c>OrToolsSolver</c> reads the same constant so
+    /// the two solvers' objectives stay byte-for-byte comparable. Tune here if driving feels too
+    /// cheap or too dear.</para>
+    /// </summary>
+    public const double DriverMinutePremium = 2.0;
+
+    /// <summary>
     /// Big-M used by OR-Tools for arrival propagation. Centralised so the heuristic and CP-SAT models
     /// stay in lockstep.
     /// </summary>
@@ -129,28 +143,41 @@ public static class ObjectiveEvaluator
             spread = max - min;
         }
 
-        // ε · fairness — max-individual minus min-individual journey cost (walk + drive). This is the
-        // worst-passenger-minus-best-passenger gap; the formulation calls it the "fairness penalty"
-        // and the CP-SAT model encodes the identical surrogate so the two objective values stay
-        // directly comparable in the benchmark report.
+        // ε · fairness — "share driving time evenly across drivers" (the UI's framing). Defined as
+        // the *maximum* driver driving minutes (Cmax / minmax makespan), with idle drivers counting
+        // as zero. The journey of how we got here is worth recording because each prior surrogate
+        // failed in a different way and the next maintainer will be tempted to revert:
+        //
+        //   1. max − min over *passenger* journey times — identically zero when every passenger
+        //      rides the same driver, so the slider did nothing on trips one car could swallow.
+        //   2. Spread of passenger counts per driver — split the *count* but not the *time*; a
+        //      3-minute hop and a 60-minute loop are "even" by count, which isn't what users mean.
+        //   3. max − min of driver driving minutes — symmetric to (1)'s failure: the solver has two
+        //      levers to close the gap, and "pull the short route *up* by detouring it" is often
+        //      cheaper than restructuring the long one. Drivers near the destination got dragged
+        //      into wasteful loops to "share the load," which the user correctly flagged as absurd.
+        //
+        // Min-max only has the good lever: reducing the maximum requires shortening the longest
+        // route (or splitting it onto a previously idle driver, which raises that driver's time but
+        // only matters if it exceeds the prior max). It never rewards extending a short route. Idle
+        // drivers don't appear in the max, so a single-car solution that's genuinely optimal stays
+        // optimal — no spurious pressure to activate a second car on trips that don't need it. The
+        // CP-SAT model in OrToolsSolver encodes the identical surrogate so the two objective values
+        // stay directly comparable in the benchmark report.
         double fairness = 0.0;
-        if (input.Passengers.Count > 0)
+        if (input.Drivers.Count > 0)
         {
-            double minJ = double.PositiveInfinity, maxJ = double.NegativeInfinity;
-            for (var p = 0; p < input.Passengers.Count; p++)
+            double maxT = 0.0;
+            for (var d = 0; d < input.Drivers.Count; d++)
             {
-                var passenger = input.Passengers[p];
-                var localIndex = IndexOf(passenger.CandidateNodeIndices, nodeChoicePerPassenger[p]);
-                var journey = passenger.WalkPtMinsByNodeIndex[localIndex] + driverArrival[driverPerPassenger[p]];
-                if (journey < minJ) minJ = journey;
-                if (journey > maxJ) maxJ = journey;
+                if (driverTravel[d] > maxT) maxT = driverTravel[d];
             }
-            fairness = maxJ - minJ;
+            fairness = maxT;
         }
 
         var terms = new[]
         {
-            weights.DriveTime * travel,
+            weights.DriveTime * DriverMinutePremium * travel,
             weights.StopCount * stops,
             weights.WalkAndPt * walk,
             weights.ArrivalSpread * spread,

@@ -43,7 +43,8 @@ public sealed record Preferences(
 /// <param name="StopCount">Weight on number of pickup stops (each visit incurs a fixed cost).</param>
 /// <param name="WalkAndPt">Weight on cumulative passenger walk + public-transport minutes.</param>
 /// <param name="ArrivalSpread">Weight on spread (max-min) of passenger arrival times at the destination.</param>
-/// <param name="Fairness">Weight on cross-passenger fairness (max individual deviation).</param>
+/// <param name="Fairness">Weight on driver-load fairness — the spread (max-min) of driving minutes
+/// across drivers, so cranking it pushes the solver to share the driving rather than load one car.</param>
 public sealed record ObjectiveWeights(
     double DriveTime,
     double StopCount,

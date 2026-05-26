@@ -292,11 +292,13 @@ public sealed class OrToolsSolver : ISolver
         var w3 = (long)Math.Round(input.Weights.ArrivalSpread * WeightScale);
         var w4 = (long)Math.Round(input.Weights.Fairness * WeightScale);
 
-        // Travel term: Σ over arcs of arc[d,i,j] · matrix[i,j]·TimeScale · w0
+        // Travel term: Σ over arcs of arc[d,i,j] · matrix[i,j]·TimeScale · w0, scaled by the
+        // driver-minute premium so a driving minute weighs more than a passenger PT minute (see
+        // ObjectiveEvaluator.DriverMinutePremium — shared so the two solvers stay comparable).
         foreach (var ((d, i, j), a) in arc)
         {
             var tij = (long)Math.Round(input.TravelMatrix[i, j] * TimeScale);
-            totalObj.AddTerm(a, tij * w0);
+            totalObj.AddTerm(a, (long)Math.Round(tij * (double)w0 * ObjectiveEvaluator.DriverMinutePremium));
         }
 
         // Stops term: Σ visit[d,n] · TimeScale · w1 (only pickup nodes counted)
@@ -336,46 +338,32 @@ public sealed class OrToolsSolver : ISolver
         }
         model.Add(spread == maxArr - minArr);
 
-        // Fairness term: "Share driving time evenly across drivers" (the UI's framing). The old
-        // formulation was max_passenger journey-time minus min_passenger journey-time — which is
-        // identically zero when every passenger rides the same driver, so it gave the solver no
-        // reason to use more than one car. The user-facing slider then did nothing on trips with
-        // enough seats in one car.
+        // Fairness term: "Share driving time evenly across drivers" (the UI's framing). The full
+        // history of attempts (and why each broke) lives on ObjectiveEvaluator.Evaluate — read that
+        // before changing this. tl;dr: spread (max − min) has two levers, and "pull the short
+        // route up by detouring it" is often cheaper than restructuring the long one, which gave
+        // drivers near the destination wasteful loops just to "share the load."
         //
-        // Now: penalise the spread of load (passengers carried) across drivers. With N passengers
-        // and K capacious drivers, the minimiser of maxLoad-minLoad is ⌈N/K⌉ - ⌊N/K⌋ (the
-        // balanced split), so cranking this slider pushes the solver toward distributing pickups.
-        // Multiplied by TimeScale so this term lives in the same scaled units as the others.
-        // Per-driver load = sum of assign[d,p,n] over all (p,n). Bound each load var to the actual
-        // sum so CP-SAT propagates it through the AddMaxEquality / AddMinEquality below.
-        var loadVars = new IntVar[input.Drivers.Count];
+        // Min-max only has the good lever: cutting the maximum requires shortening the longest
+        // route, or splitting it onto a previously idle driver (raises that driver's time, but only
+        // bites if it exceeds the prior max). Never rewards extending a short route. Idle drivers
+        // pinned to 0 don't appear in the max, so an optimal single-car solution stays optimal —
+        // no phantom pressure to activate a second car on small trips. Already in scaled-time
+        // units; composes with the travel term at the same scale, so Fairness=1.0 trades one minute
+        // on the longest driver's clock against one (premium-weighted) minute of total driving.
+        var driverTimeVars = new IntVar[input.Drivers.Count];
         for (var d = 0; d < input.Drivers.Count; d++)
         {
-            var load = model.NewIntVar(0, input.Passengers.Count, $"load_d{d}");
-            var loadSum = LinearExpr.NewBuilder();
-            for (var p = 0; p < input.Passengers.Count; p++)
-            {
-                foreach (var n in input.Passengers[p].CandidateNodeIndices)
-                {
-                    loadSum.AddTerm(assign[d, p, n], 1);
-                }
-            }
-            model.Add(load == loadSum);
-            loadVars[d] = load;
+            var dt = model.NewIntVar(0, BigM, $"drive_time_d{d}");
+            model.Add(dt == arrival[d, destIndex]).OnlyEnforceIf(hasLoadVars[d]);
+            model.Add(dt == 0).OnlyEnforceIf(hasLoadVars[d].Not());
+            driverTimeVars[d] = dt;
         }
-        var maxLoad = model.NewIntVar(0, input.Passengers.Count, "max_load");
-        var minLoad = model.NewIntVar(0, input.Passengers.Count, "min_load");
-        model.AddMaxEquality(maxLoad, loadVars);
-        model.AddMinEquality(minLoad, loadVars);
-        var loadSpread = model.NewIntVar(0, input.Passengers.Count, "load_spread");
-        model.Add(loadSpread == maxLoad - minLoad);
+        var maxDrive = model.NewIntVar(0, BigM, "max_drive");
+        model.AddMaxEquality(maxDrive, driverTimeVars);
 
-        // Spread already lives in scaled time units (TimeScale). loadSpread is a passenger count;
-        // multiply by TimeScale so a 1-passenger imbalance compares to a 1-minute drive overhead
-        // at unit weight — i.e. cranking Fairness to 1.0 says "I'd happily pay an extra minute of
-        // drive time to balance one passenger off a single driver". That's the natural anchor.
         totalObj.AddTerm(spread, w3);
-        totalObj.AddTerm(loadSpread, (long)TimeScale * w4);
+        totalObj.AddTerm(maxDrive, w4);
         model.Minimize(totalObj);
 
         // --- Warm-start hint (what-if re-optimisation) -------------------------------------------

@@ -18,8 +18,8 @@ export default async function PassengerPage({
 
   if (!as) {
     return (
-      <div className="mx-auto max-w-md p-10">
-        <Card>
+      <div className="pointer-events-auto mx-auto max-w-md p-10">
+        <Card variant="floating">
           <CardHeader>
             <CardTitle>Pass through a participant id</CardTitle>
           </CardHeader>
@@ -38,5 +38,9 @@ export default async function PassengerPage({
       </div>
     );
   }
-  return <PassengerView tripId={id} participantId={as} />;
+  return (
+    <div className="pointer-events-auto h-full w-full">
+      <PassengerView tripId={id} participantId={as} />
+    </div>
+  );
 }

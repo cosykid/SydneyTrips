@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAddParticipant, useRemoveParticipant } from "@/lib/api/hooks";
 import type { LatLng, Participant, ParticipantRole } from "@/lib/api/schema";
@@ -30,6 +29,12 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
   // Captured when the user picks a suggestion from the Places dropdown —
   // gives us exact coordinates, skipping the backend's geocode hop.
   const [originLocation, setOriginLocation] = useState<LatLng | null>(null);
+  // Google's `PlaceAutocompleteElement` is a web component that manages its
+  // own internal input value — our `value` prop only drives the no-key
+  // fallback render, so resetting form state doesn't clear the visible text.
+  // Bumping this key after a successful add unmounts and recreates the
+  // element with an empty input, which is what the user expects.
+  const [originResetKey, setOriginResetKey] = useState(0);
 
   async function onAdd(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -48,6 +53,7 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
       toast.success(`Added ${form.displayName}`);
       setForm({ displayName: "", originAddress: "", role: "passenger", seatsAvailable: 4 });
       setOriginLocation(null);
+      setOriginResetKey((k) => k + 1);
     } catch (err) {
       toast.error("Could not add participant", {
         description: err instanceof Error ? err.message : undefined,
@@ -66,46 +72,79 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Participants</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <form onSubmit={onAdd} className="grid gap-3 sm:grid-cols-[1.2fr_1.5fr_140px_120px_auto]">
-          <div className="space-y-1">
-            <Label htmlFor="p-name">Name</Label>
-            <Input
-              id="p-name"
-              value={form.displayName}
-              onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="p-origin">Where they&apos;re starting from</Label>
-            <PlaceAutocomplete
-              id="p-origin"
-              placeholder="123 Glebe Point Rd, Glebe"
-              value={form.originAddress}
-              onChange={(next) => {
-                setForm((f) => ({ ...f, originAddress: next }));
-                setOriginLocation(null);
-              }}
-              onPlace={(place: SelectedPlace) => {
-                setForm((f) => ({ ...f, originAddress: place.address }));
-                setOriginLocation(place.location);
-              }}
-            />
-          </div>
+    <section className="space-y-3">
+      <p className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
+        Participants · {participants.length}
+      </p>
+
+      <ul className="divide-border divide-y">
+        {participants.length === 0 ? (
+          <li className="text-muted-foreground py-3 text-sm">
+            No participants yet — add the first one below.
+          </li>
+        ) : null}
+        {participants.map((p) => (
+          <li key={p.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-foreground font-medium">{p.displayName}</span>
+                <Badge variant={p.role === "driver" ? "default" : "secondary"}>
+                  {p.role}
+                  {p.role === "driver" && p.seatsAvailable ? ` · ${p.seatsAvailable} seats` : ""}
+                </Badge>
+              </div>
+              <p className="text-muted-foreground truncate text-xs">{p.originAddress}</p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => onRemove(p.id)}
+              disabled={remove.isPending}
+              aria-label={`Remove ${p.displayName}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+
+      <form onSubmit={onAdd} className="bg-secondary/60 space-y-3 rounded-lg p-3">
+        <div className="space-y-1">
+          <Label htmlFor="p-name">Name</Label>
+          <Input
+            id="p-name"
+            className="bg-card"
+            value={form.displayName}
+            onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+            required
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="p-origin">Where they&apos;re starting from</Label>
+          <PlaceAutocomplete
+            key={originResetKey}
+            id="p-origin"
+            placeholder="123 Glebe Point Rd, Glebe"
+            value={form.originAddress}
+            onChange={(next) => {
+              setForm((f) => ({ ...f, originAddress: next }));
+              setOriginLocation(null);
+            }}
+            onPlace={(place: SelectedPlace) => {
+              setForm((f) => ({ ...f, originAddress: place.address }));
+              setOriginLocation(place.location);
+            }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label htmlFor="p-role">Role</Label>
             <Select
               value={form.role}
-              onValueChange={(value) =>
-                setForm((f) => ({ ...f, role: value as ParticipantRole }))
-              }
+              onValueChange={(value) => setForm((f) => ({ ...f, role: value as ParticipantRole }))}
             >
-              <SelectTrigger id="p-role">
+              <SelectTrigger id="p-role" className="bg-card">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -121,6 +160,7 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
               type="number"
               min={1}
               max={8}
+              className="bg-card"
               value={form.seatsAvailable}
               onChange={(e) =>
                 setForm((f) => ({ ...f, seatsAvailable: Number(e.target.value) || 0 }))
@@ -128,49 +168,12 @@ export function ParticipantList({ tripId, participants }: ParticipantListProps):
               disabled={form.role !== "driver"}
             />
           </div>
-          <div className="flex items-end">
-            <Button type="submit" disabled={add.isPending}>
-              <UserPlus className="mr-1 h-4 w-4" />
-              {add.isPending ? "Adding…" : "Add"}
-            </Button>
-          </div>
-        </form>
-
-        <ul className="divide-y rounded-md border">
-          {participants.length === 0 ? (
-            <li className="text-muted-foreground p-4 text-center text-sm">
-              No participants yet — add the first one above.
-            </li>
-          ) : null}
-          {participants.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{p.displayName}</span>
-                  <Badge variant={p.role === "driver" ? "default" : "secondary"}>
-                    {p.role}
-                    {p.role === "driver" && p.seatsAvailable ? ` · ${p.seatsAvailable} seats` : ""}
-                  </Badge>
-                </div>
-                <p className="text-muted-foreground truncate text-xs">{p.originAddress}</p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onRemove(p.id)}
-                disabled={remove.isPending}
-                aria-label={`Remove ${p.displayName}`}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+        </div>
+        <Button type="submit" className="w-full" disabled={add.isPending}>
+          <UserPlus className="h-4 w-4" />
+          {add.isPending ? "Adding…" : "Add participant"}
+        </Button>
+      </form>
+    </section>
   );
 }

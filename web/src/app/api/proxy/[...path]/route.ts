@@ -13,6 +13,12 @@ const UPSTREAM_BASE =
 // Hop-by-hop headers should never be forwarded — they're scoped to the
 // transport, not the message. We also strip `host` so fetch picks the upstream
 // host from the URL rather than echoing the Next.js host.
+// Statuses that MUST NOT carry a body (Fetch spec "null body status"). The
+// Response constructor throws a TypeError if handed any body — even a
+// zero-length ArrayBuffer — alongside one of these. The DELETE endpoints reply
+// 204, so reconstructing the upstream response naively crashed this proxy.
+const NULL_BODY_STATUS = new Set([101, 103, 204, 205, 304]);
+
 const HOP_BY_HOP = new Set([
   "connection",
   "content-length",
@@ -68,8 +74,11 @@ async function forward(request: NextRequest, path: string[]): Promise<NextRespon
     responseHeaders.append("set-cookie", sc);
   }
 
+  // A null-body status must be returned with no body or the NextResponse
+  // constructor throws. Still drain the upstream stream to release the socket.
   const buffer = await upstream.arrayBuffer();
-  return new NextResponse(buffer, {
+  const body = NULL_BODY_STATUS.has(upstream.status) ? null : buffer;
+  return new NextResponse(body, {
     status: upstream.status,
     headers: responseHeaders,
   });

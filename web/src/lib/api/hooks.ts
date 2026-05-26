@@ -77,18 +77,18 @@ export function useCreateTrip(): UseMutationResult<TripSummary, ApiError, Create
       // `departAt` field (treated as the earliest possible trip start) plus
       // an explicit arrival window. We give `departAt` a 60-minute head-start
       // before the target arrival so the solver has room to schedule each
-      // driver's actual departure based on their route length.
-      const arrivalMs = new Date(body.arriveBy).getTime();
-      const halfWindowMs = body.arrivalWindowMinutes * 60_000;
-      const departMs = arrivalMs - 60 * 60_000;
+      // driver's actual departure based on their route length. The window
+      // collapses to a single instant — we always aim to land on time.
+      const arrivalIso = new Date(body.arriveBy).toISOString();
+      const departIso = new Date(new Date(body.arriveBy).getTime() - 60 * 60_000).toISOString();
       const apiBody = {
         name: body.name,
         destinationName: body.destinationAddress,
         destinationLongitude: body.destination?.lng ?? 0,
         destinationLatitude: body.destination?.lat ?? 0,
-        departAt: new Date(departMs).toISOString(),
-        arrivalWindowEarliest: new Date(arrivalMs - halfWindowMs).toISOString(),
-        arrivalWindowLatest: new Date(arrivalMs + halfWindowMs).toISOString(),
+        departAt: departIso,
+        arrivalWindowEarliest: arrivalIso,
+        arrivalWindowLatest: arrivalIso,
       };
       const dto = await apiFetch<ApiTripDto>("/trips", { method: "POST", body: apiBody });
       return apiToTripSummary(dto);
@@ -305,11 +305,9 @@ export function useLockSolution(): UseMutationResult<TripSummary, ApiError, Lock
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ tripId, body }) => {
-      // The UI's LockSolutionRequest exposes a solutionId; the API expects a
-      // runId + paretoIndex (since solutions live under runs). The PlanCanvas
-      // call site has the runId via active state, but to keep this hook
-      // simple we still accept solutionId and let the caller pass runId via
-      // body. The API contract is fixed via openapi types.
+      // Solutions live under runs, so the API locks by runId + paretoIndex
+      // rather than a bare solution id. The caller builds the body from the
+      // active run.
       const dto = await apiFetch<ApiTripDto>(`/trips/${tripId}/lock-solution`, {
         method: "POST",
         body,

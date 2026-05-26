@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Route } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { WeightSliders } from "./WeightSliders";
 import { SolutionPanel } from "./SolutionPanel";
 import type { PlanMapProps } from "./PlanMap";
 import { WhatIfDialog } from "@/components/whatif/WhatIfDialog";
+import { TransitBadge } from "@/components/map/TransitBadge";
 import type { Solution } from "@/lib/api/schema";
 
 const PlanMap = dynamic<PlanMapProps>(
@@ -83,9 +84,12 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
     }
   }
 
-  async function onLock(solutionId: string) {
+  async function onLock() {
+    const runId = run.data?.id;
+    if (!runId) return;
     try {
-      await lock.mutateAsync({ tripId, body: { solutionId } });
+      // One solution per run, so it's always the first (and only) entry.
+      await lock.mutateAsync({ tripId, body: { runId, paretoIndex: 0 } });
       toast.success("Plan saved");
     } catch (err) {
       toast.error("Could not save plan", {
@@ -135,7 +139,7 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
 
       <Card
         variant="floating"
-        className="absolute top-4 left-4 z-10 flex max-h-[calc(100vh-2rem)] w-[360px] flex-col overflow-y-auto p-5"
+        className="absolute top-4 left-4 z-10 flex max-h-[calc(100vh-5.5rem)] w-[360px] flex-col overflow-y-auto p-5"
       >
         <header className="space-y-1.5">
           <Link
@@ -157,7 +161,7 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
           onClick={() => runOptimise()}
           disabled={computing || optimise.isPending}
         >
-          <Sparkles className="mr-2 h-4 w-4" />
+          <Route className="mr-2 h-4 w-4" />
           {hasOptimisedOnce ? "Re-plan" : "Plan trip"}
         </Button>
 
@@ -196,13 +200,19 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
       <Card
         variant="floating"
         size="sm"
-        className="absolute bottom-4 left-4 z-10 flex flex-row items-center gap-3 px-3 py-2 text-[11px]"
+        className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 flex-row flex-wrap items-center justify-center gap-x-3 gap-y-1 px-3 py-2 text-[11px]"
       >
         <LegendDot className="bg-success" /> Pickup
         <LegendDot className="bg-primary" /> People
         <LegendLine /> Car
         <LegendDash color="#475569" /> Walk
-        <LegendDash color="#7C3AED" /> Public transport
+        <span className="inline-flex items-center gap-0.5" aria-hidden>
+          <TransitBadge modality="train_station" size={12} />
+          <TransitBadge modality="bus_stop" size={12} />
+          <TransitBadge modality="ferry_wharf" size={12} />
+          <TransitBadge modality="light_rail" size={12} />
+        </span>{" "}
+        Public transport
         <span className="text-[#EA4335]">📍</span> Destination
       </Card>
 

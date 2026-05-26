@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   APIProvider,
   AdvancedMarker,
+  ControlPosition,
   InfoWindow,
   Map,
   Pin,
@@ -12,12 +13,16 @@ import type {
   CandidateNode,
   LatLng,
   Participant,
+  PathLeg,
   Solution,
   TripSummary,
 } from "@/lib/api/schema";
 import { driverColour } from "@/lib/map/palette";
 import { GooglePolyline } from "@/lib/map/google-polyline";
 import { useRoutePolylines } from "@/lib/map/useRoutePolylines";
+import { metresPerPixel, offsetPath } from "@/lib/map/offset";
+import { PT_FALLBACK_COLOUR, WALK_COLOUR, legStyle, transitStyle } from "@/lib/map/transit";
+import { TransitBadge } from "@/components/map/TransitBadge";
 import { MapFallback } from "@/components/map/MapFallback";
 import type { MapViewState } from "@/lib/store";
 
@@ -33,10 +38,10 @@ export interface PlanMapProps {
 
 const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID";
 
-/** Fixed colours for the two non-car modes so the user can read mode at a glance,
- *  independent of which driver is doing the pickup. */
-const WALK_COLOUR = "#475569"; // slate-600
-const PT_COLOUR = "#7C3AED"; // violet-600 — distinct from any driver palette entry
+/** Pixel gap between adjacent parallel driver routes — converted to metres at the current
+ *  zoom so routes that share roads fan out into legible parallel lanes instead of hiding
+ *  one another. */
+const ROUTE_FAN_PX = 6;
 
 export function PlanMap(props: PlanMapProps): React.JSX.Element {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
@@ -65,6 +70,11 @@ interface PassengerLeg {
   walkMins: number;
   /** Public-transport minutes from home to pickup (0 when the passenger walks the whole way). */
   ptMins: number;
+  /** Transit mode of the pickup hub, so the leg can be coloured/labelled by mode (TfNSW palette). */
+  mode: CandidateNode["modality"];
+  /** Per-segment journey (walk + each PT leg) with its own mode, so the renderer can colour each
+   *  segment distinctly (Google-Maps style). Preferred over `path` when present. */
+  pathLegs?: PathLeg[];
   /** Real PT geometry from home to pickup, when the backend provided it (multi-leg polyline
    *  flattened to a single LatLng sequence). When present, the renderer draws this instead of
    *  a straight crow-fly line. Undefined for walk-only legs and legacy nodes. */
@@ -95,20 +105,32 @@ function PlanMapInner({
     driverOrigins,
   );
 
-  /** Lookup: (participantId, candidateNodeId) → PT polyline path. Candidate nodes carry their
-   *  own home→hub geometry; we key by participant + candidate so a passenger's "Home" candidate
-   *  (no path) doesn't collide with their "Epping" candidate. */
-  const pathByPassengerNode = useMemo<Record<string, LatLng[]>>(() => {
-    const out: Record<string, LatLng[]> = {};
-    for (const n of candidateNodes) {
-      if (!n.participantId || !n.path || n.path.length < 2) continue;
-      out[`${n.participantId}::${n.id}`] = n.path;
-    }
-    return out;
-  }, [candidateNodes]);
+  // Fan overlapping driver routes apart. The offset is in metres but derived from a fixed
+  // pixel gap at the current zoom, so the separation stays visually constant as you zoom.
+  // Recomputed only when the zoom step changes or a snapped path resolves (its length appears),
+  // keeping polyline identities — and therefore the underlying google.maps overlays — stable.
+  const snappedSig = (solution?.routes ?? [])
+    .map((_, i) => snappedPolylines[i]?.length ?? 0)
+    .join(",");
+  const zoomStep = Math.round(viewState.zoom);
+  const offsetRoutePaths = useMemo<LatLng[][]>(() => {
+    const routes = solution?.routes ?? [];
+    const n = routes.length;
+    if (n === 0) return [];
+    const mpp = metresPerPixel(zoomStep, destination.point.lat);
+    return routes.map((route, idx) => {
+      const base = snappedPolylines[idx] ?? route.polyline;
+      if (n < 2) return base;
+      const metres = (idx - (n - 1) / 2) * ROUTE_FAN_PX * mpp;
+      return offsetPath(base, metres);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solution, snappedSig, zoomStep, destination.point.lat]);
 
-  /** For each passenger, the pickup stop they've been assigned to, with walk/PT minutes coming
-   *  from the new SolutionStop.pickupLegs payload — those drive the visual style below. */
+  /** For each passenger, the pickup stop they've been assigned to, with walk/PT minutes and the
+   *  home→pickup geometry coming straight from the SolutionStop.pickupLegs payload. The path is
+   *  carried per-leg (not looked up by the stop's canonical candidate node) so co-located
+   *  passengers each render along their own route instead of a shared straight line. */
   const passengerLegs = useMemo<PassengerLeg[]>(() => {
     if (!solution) return [];
     const byId: Record<string, Participant> = {};
@@ -120,23 +142,22 @@ function PlanMapInner({
         for (const leg of stop.pickupLegs) {
           const p = byId[leg.participantId];
           if (!p) continue;
-          const pathKey = stop.candidateNodeId
-            ? `${leg.participantId}::${stop.candidateNodeId}`
-            : null;
           legs.push({
             participantId: leg.participantId,
             origin: p.origin,
             pickup: stop.location,
             walkMins: leg.walkMins,
             ptMins: leg.ptMins,
-            path: pathKey ? pathByPassengerNode[pathKey] : undefined,
+            mode: stop.nodeKind,
+            pathLegs: leg.pathLegs && leg.pathLegs.length > 0 ? leg.pathLegs : undefined,
+            path: leg.path && leg.path.length >= 2 ? leg.path : undefined,
             driverColour: colour,
           });
         }
       }
     });
     return legs;
-  }, [solution, participants, pathByPassengerNode]);
+  }, [solution, participants]);
 
   /** Driver id → route colour so each driver's home marker carries the same colour as their road
    *  line. Passenger markers stay neutral (modes encode their leg). */
@@ -164,6 +185,10 @@ function PlanMapInner({
       zoom={viewState.zoom}
       gestureHandling="greedy"
       disableDefaultUI={false}
+      // The planner panel sits over the top-left corner, so push Google's
+      // Map/Satellite toggle to the right edge where it stays reachable.
+      mapTypeControlOptions={{ position: ControlPosition.TOP_RIGHT }}
+      fullscreenControlOptions={{ position: ControlPosition.TOP_RIGHT }}
       clickableIcons={false}
       onCameraChanged={(ev) => {
         const { center, zoom } = ev.detail;
@@ -178,23 +203,27 @@ function PlanMapInner({
         </AdvancedMarker>
       ))}
 
-      {/* Driver (car) routes — solid road-snapped polyline; falls back to the
-          straight `route.polyline` while the Routes API request is in flight. */}
-      {solution?.routes.map((route, idx) => {
-        const path = snappedPolylines[idx] ?? route.polyline;
-        return (
-          <GooglePolyline
-            key={`route-${route.driverParticipantId}`}
-            path={path}
-            color={route.colour ?? driverColour(idx)}
-          />
-        );
-      })}
+      {/* Driver (car) routes — solid road-snapped polyline, fanned apart when they share roads,
+          with a white casing for crossing legibility and forward arrows for direction. Falls
+          back to the straight `route.polyline` while the Routes API request is in flight. */}
+      {solution?.routes.map((route, idx) => (
+        <GooglePolyline
+          key={`route-${route.driverParticipantId}`}
+          path={offsetRoutePaths[idx] ?? route.polyline}
+          color={route.colour ?? driverColour(idx)}
+          weight={5}
+          casing
+          // Space z-indices by 2 so each route's white casing (zIndex-1) never lands on a
+          // neighbour's coloured line where the fanned-out lanes brush against each other.
+          zIndex={10 + idx * 2}
+        />
+      ))}
 
-      {/* Passenger home → pickup legs. Three visual styles, in priority order:
-            1. PT with a real polyline (path present):  single dashed violet line following the
-                                                         actual TfNSW journey (walks + PT legs
-                                                         concatenated).
+      {/* Passenger home → pickup legs. PT legs are coloured by the hub's TfNSW mode (train =
+          orange, bus = blue, ferry = green, light rail = red); walks stay slate. Three visual
+          styles, in priority order:
+            1. PT with a real polyline (path present):  single dashed mode-coloured line following
+                                                         the actual TfNSW journey.
             2. PT but no polyline (legacy node, stub):   schematic walk/PT split along a straight
                                                          line — the old behaviour, kept as a
                                                          fallback so the map doesn't go blank
@@ -202,6 +231,26 @@ function PlanMapInner({
             3. Walk-only (ptMins == 0):                  single dashed slate line from home to
                                                          pickup. */}
       {passengerLegs.flatMap((leg) => {
+        // Preferred: colour each segment of the real multi-leg journey by its own mode
+        // (walk = slate, then the TfNSW colour for each PT leg) — the Google-Maps look.
+        if (leg.pathLegs && leg.pathLegs.length > 0) {
+          return leg.pathLegs
+            .filter((seg) => seg.path.length >= 2)
+            .map((seg, i) => {
+              const style = legStyle(seg.mode);
+              return (
+                <GooglePolyline
+                  key={`segleg-${leg.participantId}-${i}`}
+                  path={seg.path}
+                  color={style.color}
+                  weight={style.isWalk ? 3 : 4}
+                  opacity={style.isWalk ? 0.85 : 0.9}
+                  dashed
+                />
+              );
+            });
+        }
+        const ptColour = transitStyle(leg.mode)?.color ?? PT_FALLBACK_COLOUR;
         if (leg.ptMins <= 0) {
           return [
             <GooglePolyline
@@ -219,7 +268,7 @@ function PlanMapInner({
             <GooglePolyline
               key={`pt-${leg.participantId}`}
               path={leg.path}
-              color={PT_COLOUR}
+              color={ptColour}
               weight={4}
               opacity={0.9}
               dashed
@@ -240,7 +289,7 @@ function PlanMapInner({
           <GooglePolyline
             key={`pt-${leg.participantId}`}
             path={[split, leg.pickup]}
-            color={PT_COLOUR}
+            color={ptColour}
             weight={4}
             opacity={0.9}
             dashed
@@ -248,39 +297,44 @@ function PlanMapInner({
         ];
       })}
 
-      {/* Midpoint label per leg: minute breakdown so a quick glance answers
-          "is this person walking, or riding PT?". */}
+      {/* Midpoint label per leg: a TfNSW mode chip + minute breakdown so a glance answers both
+          "is this person walking or riding PT?" and "which mode?". */}
       {passengerLegs.map((leg) => {
-        const mid = midpoint(leg.origin, leg.pickup);
-        const label =
-          leg.ptMins > 0
-            ? `${leg.walkMins}+${leg.ptMins} min`
-            : leg.walkMins > 0
-              ? `${leg.walkMins} min walk`
-              : "";
-        if (!label) return null;
+        if (leg.ptMins <= 0 && leg.walkMins <= 0) return null;
+        // Anchor on the middle of the real PT path when we have it, else the crow-fly midpoint.
+        const mid =
+          leg.path && leg.path.length >= 2
+            ? leg.path[Math.floor(leg.path.length / 2)]
+            : midpoint(leg.origin, leg.pickup);
+        const style = transitStyle(leg.mode);
         return (
           <AdvancedMarker
             key={`leg-label-${leg.participantId}`}
             position={{ lat: mid.lat, lng: mid.lng }}
           >
             <div
-              className="rounded-full bg-white/95 px-1.5 py-0.5 text-[10px] font-medium shadow ring-1 ring-slate-300"
-              style={{
-                color: leg.ptMins > 0 ? PT_COLOUR : WALK_COLOUR,
-                whiteSpace: "nowrap",
-                lineHeight: 1.1,
-              }}
+              className="flex items-center gap-1 rounded-full bg-white/95 px-1.5 py-0.5 text-[10px] font-medium shadow ring-1 ring-slate-300"
+              style={{ whiteSpace: "nowrap", lineHeight: 1.1 }}
             >
-              {leg.ptMins > 0 ? "🚆 " : "🚶 "}
-              {label}
+              {leg.ptMins > 0 ? (
+                <>
+                  {style ? <TransitBadge modality={leg.mode} size={13} /> : <span>🚆</span>}
+                  <span style={{ color: style?.color ?? PT_FALLBACK_COLOUR }}>
+                    {leg.walkMins > 0
+                      ? `${leg.walkMins} min walk · ${leg.ptMins} min`
+                      : `${leg.ptMins} min`}
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: WALK_COLOUR }}>🚶 {leg.walkMins} min walk</span>
+              )}
             </div>
           </AdvancedMarker>
         );
       })}
 
-      {/* Pickup stops — green pins. Hubs with a transit modality get an extra mode glyph so the
-          map answers "is this a train/bus/ferry stop?" without needing the hover tooltip. */}
+      {/* Pickup stops — green pins. Transit hubs get a TfNSW mode chip above the dot so the map
+          answers "is this a train/bus/ferry/light-rail stop?" without needing the hover tooltip. */}
       {solution?.routes.flatMap((route) =>
         route.stops.map((s, sidx) => (
           <AdvancedMarker
@@ -288,13 +342,9 @@ function PlanMapInner({
             position={{ lat: s.location.lat, lng: s.location.lng }}
           >
             <div className="flex flex-col items-center">
-              {modalityIcon(s.nodeKind) ? (
-                <span
-                  className="mb-0.5 rounded-full bg-white/95 px-1 py-0.5 text-[11px] shadow ring-1 ring-slate-300"
-                  style={{ lineHeight: 1 }}
-                  aria-label={s.nodeKind}
-                >
-                  {modalityIcon(s.nodeKind)}
+              {transitStyle(s.nodeKind) ? (
+                <span className="mb-0.5">
+                  <TransitBadge modality={s.nodeKind} size={16} />
                 </span>
               ) : null}
               <div className="h-3.5 w-3.5 rounded-full bg-[#34A853] ring-2 ring-white shadow-md" />
@@ -308,9 +358,9 @@ function PlanMapInner({
       {participants.map((p) => {
         const colour =
           p.role === "driver"
-            ? driverColourById[p.id] ?? "#1A73E8"
+            ? driverColourById[p.id] ?? "#0E7C86"
             : passengerLegs.find((l) => l.participantId === p.id)?.driverColour ??
-              "#1A73E8";
+              "#0E7C86";
         return (
           <AdvancedMarker
             key={`origin-${p.id}`}
@@ -367,8 +417,15 @@ function PlanMapInner({
                   </span>
                 </div>
                 {hoveredLeg.ptMins > 0 ? (
-                  <div>
-                    🚆 Public transport:{" "}
+                  <div className="flex items-center gap-1">
+                    {transitStyle(hoveredLeg.mode) ? (
+                      <TransitBadge modality={hoveredLeg.mode} size={14} />
+                    ) : (
+                      <span>🚆</span>
+                    )}
+                    <span>
+                      {transitStyle(hoveredLeg.mode)?.name ?? "Public transport"}:
+                    </span>
                     <span className="font-medium text-slate-800">
                       {hoveredLeg.ptMins} min
                     </span>
@@ -416,19 +473,4 @@ function computeSplitPoint(
     lat: origin.lat + (pickup.lat - origin.lat) * t,
     lng: origin.lng + (pickup.lng - origin.lng) * t,
   };
-}
-
-function modalityIcon(modality: CandidateNode["modality"] | undefined): string | null {
-  switch (modality) {
-    case "train_station":
-      return "🚆";
-    case "bus_stop":
-      return "🚌";
-    case "ferry_wharf":
-      return "⛴";
-    case "light_rail":
-      return "🚊";
-    default:
-      return null;
-  }
 }

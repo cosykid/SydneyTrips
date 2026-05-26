@@ -99,6 +99,19 @@ The README and `docs/architecture.md` cover the user-facing pitch and the depend
 
 Points are `NetTopologySuite.Geometries.Point` with `SRID = 4326`, **longitude first** (`new Point(lng, lat) { SRID = 4326 }`). Mapping to DTOs flattens to `{ longitude, latitude }` pairs. Don't mix the order — there's no compile-time check.
 
+### TfNSW candidate-node generation & PT pickup legs
+
+Passenger pickup hubs come from `ParticipantCandidateNodeService.PopulateAsync` (runs on participant-add and on `POST /trips/{id}/refresh-candidate-nodes`). It probes TfNSW (`ITfNswClient.TripPlanAsync` / `CoordinateRequestAsync`) for transit interchanges a driver can reach, planning against `trip.DepartAt − safety buffer`. Each admitted hub stores the home→hub `Path` (LineString) + mode-tagged `PathLegs`, which flow through the solution DTO to the planner map (`PlanMap.tsx`), where each walk/train/bus/ferry segment is coloured by mode.
+
+Gotchas that have cost real debugging time:
+
+- **A past or invalid `trip.DepartAt` silently wipes every PT hub.** EFA rejects past dates (`journeys: null`, `code -4001 "invalid date"`), so every trip-plan probe returns empty and each passenger collapses to Home-only → the solver picks everyone up by car at their doorstep (one giant detour loop). The UI symptom is "everyone driven door-to-door", or — before the empty-plan guard existed — straight crow-fly pickup lines. **Before suspecting the solver or the map, confirm `DepartAt` is in the future, then re-run `refresh-candidate-nodes`.** (A trip created days ago will have drifted into the past.)
+- **An empty plan ≠ a reachable hub.** `TfNswClient.MapTripPlan` returns a *non-null* `TfNswTripPlan([], 0, 0)` when there's no journey. `TryAdmitProbedHub` skips probes totalling ≤ 0 minutes for this reason — don't relax that into admitting them, or you fabricate free, geometry-less "teleport" pickups that the map can only draw crow-fly.
+- **`CachingTfNswClient` must round-trip leg `Polyline` + `FromName`/`ToName`.** It once cached only mode/duration/endpoints, so any Redis cache hit returned legs with null geometry → null `Path` → crow-fly, even on a valid date. If you add a field to `TfNswJourneyLeg`, add it to `CachedJourneyLeg` too (and assert it in `CachingDecoratorTests`).
+- The planner's crow-fly dashed line is a **no-geometry fallback**, not a map bug. If you see it, inspect `candidate_nodes` first: `Path`/`path_legs` null with `WalkMins`/`PtMins` = 0 means the probe returned no journey (almost always a past `DepartAt`, or the stub client).
+
+Diagnosing against Postgres (host port 5433): `candidate_nodes` columns are PascalCase, so quote them (`cn."Path"`, `cn."WalkMins"`); `Path` is `geometry(LineString,4326)`, `path_legs` is `jsonb`. The live TfNSW client is wired only when `Integrations:TfNsw:ApiKey` is set (user-secrets, id in `Trips.Api.csproj`); without it `StubTfNswClient` serves canned hubs with plain names ("Hornsby", "Chatswood") and **no** geometry — so stub-generated trips also render crow-fly by design.
+
 ### Realtime (Trips.Realtime)
 
 - `TripHub` is the SignalR hub. Drivers push positions, passengers receive ETAs. JWT auth flows via the `access_token` query string (handled in `Program.cs:JwtBearerEvents.OnMessageReceived`) because WebSocket upgrades can't carry the `Authorization` header.
@@ -128,7 +141,7 @@ Do **not** add `Co-Authored-By: Claude …` or any AI/assistant trailer. Style: 
 
 ### Map fallback
 
-`web/src/components/map/MapFallback.tsx` is a deterministic SVG canvas drawn from real lat/lng. When `NEXT_PUBLIC_MAPBOX_TOKEN` is unset (the default in CI and Playwright screenshot capture), `PlanMap` and `LiveMap` render this instead of Mapbox. Don't make new map components depend on a Mapbox token at runtime — go through the same fallback.
+Maps render via Google Maps (`@vis.gl/react-google-maps`), keyed by `NEXT_PUBLIC_GOOGLE_MAPS_KEY` (plus `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`, which defaults to `DEMO_MAP_ID`). When the key is unset — the default in CI and Playwright screenshot capture — `PlanMap`, `LiveMap`, and `MapBackdrop` render `web/src/components/map/MapFallback.tsx`, a deterministic SVG canvas drawn from real lat/lng, instead of Google Maps. Don't make new map components hard-depend on the key at runtime — gate on it and fall through to `MapFallback` the same way.
 
 ### Solver kinds in seed/smoke scripts
 

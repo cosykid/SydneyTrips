@@ -21,9 +21,8 @@ export interface TripSummary {
   name: string;
   destinationAddress: string;
   destination: LatLng;
-  /** When the user wants to be at the destination (centre of the arrival window). */
+  /** When the user wants to be at the destination. */
   arriveBy: IsoDateTime;
-  arrivalWindowMinutes: number;
   status: TripStatus;
   participantCount: number;
   hasLockedSolution: boolean;
@@ -132,11 +131,25 @@ export interface SolutionStop {
 }
 
 /** One passenger's home → pickup leg. Walking + PT minutes are reported separately so the UI
- *  can render the two segments distinctly. */
+ *  can render the two segments distinctly. `path` is this passenger's own home→pickup geometry
+ *  (when the backend has it) — carried per-leg so co-located passengers each draw their own route
+ *  rather than sharing the stop's single canonical path. */
 export interface PickupLeg {
   participantId: Uuid;
   walkMins: number;
   ptMins: number;
+  path?: LatLng[];
+  /** The same home→pickup journey as `path`, split into mode-tagged segments so the map can
+   *  colour each leg (walk / train / bus / ferry / light rail) distinctly, Google-Maps style.
+   *  Absent on legacy / stub data — fall back to the single-colour `path`. */
+  pathLegs?: PathLeg[];
+}
+
+/** One mode-tagged segment of a passenger's home→pickup journey. */
+export interface PathLeg {
+  /** Raw TfNSW mode: "walk" | "train" | "metro" | "bus" | "ferry" | "lightrail" | "unknown". */
+  mode: string;
+  path: LatLng[];
 }
 
 export interface Solution {
@@ -169,7 +182,6 @@ export interface CreateTripRequest {
   /** User's target arrival time. The hook adapter back-computes a sensible
    *  departAt before sending to the API. */
   arriveBy: IsoDateTime;
-  arrivalWindowMinutes: number;
 }
 
 export interface AddParticipantRequest {
@@ -183,7 +195,10 @@ export interface AddParticipantRequest {
 }
 
 export interface LockSolutionRequest {
-  solutionId: Uuid;
+  /** Solutions live under runs, so the API locks by run + index, not by a bare
+   *  solution id. With the single-solution-per-run model this is always index 0. */
+  runId: Uuid;
+  paretoIndex: number;
 }
 
 export interface CostSplit {

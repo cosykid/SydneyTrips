@@ -1,15 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { useCreateTrip } from "@/lib/api/hooks";
 import { PlaceAutocomplete, type SelectedPlace } from "./PlaceAutocomplete";
 import type { LatLng } from "@/lib/api/schema";
@@ -21,11 +25,6 @@ const schema = z.object({
     .string()
     .min(1, "Pick a time")
     .refine((value) => !Number.isNaN(new Date(value).getTime()), "Invalid datetime"),
-  arrivalWindowMinutes: z
-    .number()
-    .or(z.string())
-    .transform((value) => Number(value))
-    .pipe(z.number().int().min(0).max(240)),
 });
 
 type FormValues = z.input<typeof schema>;
@@ -45,7 +44,6 @@ export function CreateTripForm(): React.JSX.Element {
       name: "",
       destinationAddress: "",
       arriveBy: defaultArriveBy(),
-      arrivalWindowMinutes: 15,
     },
   });
 
@@ -55,7 +53,6 @@ export function CreateTripForm(): React.JSX.Element {
         name: values.name,
         destinationAddress: values.destinationAddress,
         arriveBy: new Date(values.arriveBy).toISOString(),
-        arrivalWindowMinutes: values.arrivalWindowMinutes,
         ...(destinationLocation ? { destination: destinationLocation } : {}),
       });
       toast.success("Trip created");
@@ -68,83 +65,85 @@ export function CreateTripForm(): React.JSX.Element {
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-6 pt-6">
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-          <div className="space-y-1.5">
-            <Label htmlFor="name">Trip name</Label>
-            <Input id="name" placeholder="Saturday at Palmy" {...form.register("name")} />
-            {form.formState.errors.name ? (
-              <p className="text-destructive text-xs">{form.formState.errors.name.message}</p>
-            ) : null}
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="destinationAddress">Where are you going?</Label>
-              <Controller
-                control={form.control}
-                name="destinationAddress"
-                render={({ field }) => (
-                  <PlaceAutocomplete
-                    id="destinationAddress"
-                    placeholder="Search for an address or place"
-                    value={field.value}
-                    onChange={(next) => {
-                      field.onChange(next);
-                      // Clear the resolved location when the user edits the
-                      // text — it's no longer guaranteed to match.
-                      setDestinationLocation(null);
-                    }}
-                    onPlace={(place: SelectedPlace) => {
-                      field.onChange(place.address);
-                      setDestinationLocation(place.location);
-                    }}
-                  />
-                )}
+    <Card variant="floating" className="max-h-[calc(100vh-2rem)] gap-0 overflow-y-auto py-0">
+      <div className="px-5 pt-4 pb-3">
+        <Link
+          href="/trips"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
+        >
+          <ArrowLeft className="h-3 w-3" /> Your trips
+        </Link>
+        <h1 className="text-foreground mt-1.5 text-xl font-medium tracking-tight">Create a trip</h1>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          Drop in a destination and timing — we&apos;ll prep pickup points as you add people.
+        </p>
+      </div>
+      <Separator />
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 px-5 py-5">
+        <div className="space-y-1.5">
+          <Label htmlFor="name">Trip name</Label>
+          <Input id="name" placeholder="Saturday at Palmy" {...form.register("name")} />
+          {form.formState.errors.name ? (
+            <p className="text-destructive text-xs">{form.formState.errors.name.message}</p>
+          ) : null}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="destinationAddress">Where are you going?</Label>
+          <Controller
+            control={form.control}
+            name="destinationAddress"
+            render={({ field }) => (
+              <PlaceAutocomplete
+                id="destinationAddress"
+                placeholder="Search for an address or place"
+                value={field.value}
+                onChange={(next) => {
+                  field.onChange(next);
+                  // Clear the resolved location when the user edits the
+                  // text — it's no longer guaranteed to match.
+                  setDestinationLocation(null);
+                }}
+                onPlace={(place: SelectedPlace) => {
+                  field.onChange(place.address);
+                  setDestinationLocation(place.location);
+                }}
               />
-              {form.formState.errors.destinationAddress ? (
-                <p className="text-destructive text-xs">
-                  {form.formState.errors.destinationAddress.message}
-                </p>
-              ) : null}
-              {destinationLocation ? (
-                <p className="text-muted-foreground text-[11px]">
-                  Pinned at {destinationLocation.lat.toFixed(4)},{" "}
-                  {destinationLocation.lng.toFixed(4)}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="arriveBy">Arrive by</Label>
-              <Input id="arriveBy" type="datetime-local" {...form.register("arriveBy")} />
-              {form.formState.errors.arriveBy ? (
-                <p className="text-destructive text-xs">{form.formState.errors.arriveBy.message}</p>
-              ) : null}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="arrivalWindowMinutes">Arrival window (min)</Label>
-              <Input
-                id="arrivalWindowMinutes"
-                type="number"
-                min={0}
-                max={240}
-                {...form.register("arrivalWindowMinutes")}
-              />
-              <p className="text-muted-foreground text-xs">
-                +/- minutes of flexibility around your target arrival time.
-              </p>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => router.push("/trips")}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Creating…" : "Create trip"}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
+            )}
+          />
+          {form.formState.errors.destinationAddress ? (
+            <p className="text-destructive text-xs">
+              {form.formState.errors.destinationAddress.message}
+            </p>
+          ) : null}
+          {destinationLocation ? (
+            <p className="text-muted-foreground text-[11px]">
+              Pinned at {destinationLocation.lat.toFixed(4)},{" "}
+              {destinationLocation.lng.toFixed(4)}
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="arriveBy">Arrive by</Label>
+          <Controller
+            control={form.control}
+            name="arriveBy"
+            render={({ field }) => (
+              <DateTimePicker id="arriveBy" value={field.value} onChange={field.onChange} />
+            )}
+          />
+          {form.formState.errors.arriveBy ? (
+            <p className="text-destructive text-xs">{form.formState.errors.arriveBy.message}</p>
+          ) : null}
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" onClick={() => router.push("/trips")}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={create.isPending}>
+            {create.isPending ? "Creating…" : "Create trip"}
+          </Button>
+        </div>
+      </form>
     </Card>
   );
 }

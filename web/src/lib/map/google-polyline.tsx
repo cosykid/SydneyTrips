@@ -15,6 +15,19 @@ interface GooglePolylineProps {
    * transport leg from the driver's car route.
    */
   dashed?: boolean;
+  /**
+   * When true, repeats a forward-pointing arrowhead along the line so the
+   * direction of travel is readable at a glance.
+   */
+  arrows?: boolean;
+  /**
+   * When true, draws a wider white line directly beneath the coloured stroke.
+   * The halo keeps overlapping/crossing routes legible against each other and
+   * against the basemap (the same trick Google's own directions layer uses).
+   */
+  casing?: boolean;
+  /** Stacking order; higher draws on top. The casing always sits just below its line. */
+  zIndex?: number;
 }
 
 /**
@@ -28,41 +41,82 @@ export function GooglePolyline({
   weight = 5,
   opacity = 0.9,
   dashed = false,
+  arrows = false,
+  casing = false,
+  zIndex,
 }: GooglePolylineProps): null {
   const map = useMap();
 
   useEffect(() => {
     if (!map || path.length < 2) return;
-    const polyline = new google.maps.Polyline({
-      path: path.map((p) => ({ lat: p.lat, lng: p.lng })),
-      geodesic: false,
-      strokeColor: color,
-      // For dashed lines the stroke itself is invisible — the dot icons below
-      // do the rendering. Spacing the dots ~ every 2× the line weight reads as
-      // a balanced dash pattern at typical city zooms.
-      strokeOpacity: dashed ? 0 : opacity,
-      strokeWeight: weight,
-      icons: dashed
-        ? [
-            {
-              icon: {
-                path: "M 0,-1 0,1",
-                strokeColor: color,
-                strokeOpacity: opacity,
-                strokeWeight: weight,
-                scale: 2,
-              },
-              offset: "0",
-              repeat: `${Math.max(weight * 3, 12)}px`,
-            },
-          ]
-        : undefined,
-      map,
-    });
+    const coords = path.map((p) => ({ lat: p.lat, lng: p.lng }));
+    const overlays: google.maps.Polyline[] = [];
+
+    // White halo beneath the coloured stroke — drawn first / lower so the colour sits on top.
+    if (casing) {
+      overlays.push(
+        new google.maps.Polyline({
+          path: coords,
+          geodesic: false,
+          strokeColor: "#FFFFFF",
+          strokeOpacity: dashed ? 0 : 0.95,
+          strokeWeight: weight + 3,
+          zIndex: zIndex === undefined ? undefined : zIndex - 1,
+          map,
+        }),
+      );
+    }
+
+    // Repeating symbols layered on the line: dash dots and/or direction arrows.
+    const icons: google.maps.IconSequence[] = [];
+    if (dashed) {
+      // For dashed lines the stroke itself is invisible — these dots do the rendering.
+      // Spacing the dots ~ every 3× the line weight reads as a balanced dash pattern.
+      icons.push({
+        icon: {
+          path: "M 0,-1 0,1",
+          strokeColor: color,
+          strokeOpacity: opacity,
+          strokeWeight: weight,
+          scale: 2,
+        },
+        offset: "0",
+        repeat: `${Math.max(weight * 3, 12)}px`,
+      });
+    }
+    if (arrows) {
+      icons.push({
+        icon: {
+          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          fillColor: "#FFFFFF",
+          fillOpacity: 1,
+          strokeColor: color,
+          strokeOpacity: 1,
+          strokeWeight: 1,
+          scale: Math.max(weight * 0.55, 2.5),
+        },
+        offset: "24px",
+        repeat: "110px",
+      });
+    }
+
+    overlays.push(
+      new google.maps.Polyline({
+        path: coords,
+        geodesic: false,
+        strokeColor: color,
+        strokeOpacity: dashed ? 0 : opacity,
+        strokeWeight: weight,
+        icons: icons.length ? icons : undefined,
+        zIndex,
+        map,
+      }),
+    );
+
     return () => {
-      polyline.setMap(null);
+      for (const o of overlays) o.setMap(null);
     };
-  }, [map, path, color, weight, opacity, dashed]);
+  }, [map, path, color, weight, opacity, dashed, arrows, casing, zIndex]);
 
   return null;
 }

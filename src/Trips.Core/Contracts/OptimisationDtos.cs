@@ -74,4 +74,13 @@ public sealed record PickupLegDto(
     Guid ParticipantId,
     int WalkMins,
     int PtMins,
-    PathDto? Path);
+    PathDto? Path,
+    /// <summary>The same home→pickup journey as <see cref="Path"/>, split into mode-tagged
+    /// segments so the map can colour each leg (walk / train / bus / ferry / light rail)
+    /// distinctly. Null when the backend has no per-leg geometry (stub / pre-feature data);
+    /// the FE falls back to the single-colour <see cref="Path"/>.</summary>
+    IReadOnlyList<PathLegDto>? PathLegs = null);
+
+/// <summary>One mode-tagged segment of a passenger's home→pickup journey. <see cref="Mode"/> is the
+/// raw TfNSW mode string ("walk", "train", "metro", "bus", "ferry", "lightrail", "unknown").</summary>
+public sealed record PathLegDto(string Mode, PathDto Path);

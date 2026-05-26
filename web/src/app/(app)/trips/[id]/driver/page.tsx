@@ -14,5 +14,9 @@ export default async function DriverPage({
 }: PageParams): Promise<React.JSX.Element> {
   const { id } = await params;
   const { as } = await searchParams;
-  return <DriverView tripId={id} currentUserParticipantId={as} />;
+  return (
+    <div className="pointer-events-auto h-full w-full">
+      <DriverView tripId={id} currentUserParticipantId={as} />
+    </div>
+  );
 }

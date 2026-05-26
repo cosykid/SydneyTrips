@@ -6,7 +6,7 @@ import type { Solution } from "@/lib/api/schema";
 
 export interface SolutionPanelProps {
   solution: Solution;
-  onLock: (id: string) => void;
+  onLock: () => void;
   onWhatIf?: (solution: Solution) => void;
   isLocking?: boolean;
   lockedSolutionId?: string;
@@ -35,7 +35,7 @@ export function SolutionPanel({
         <Button
           type="button"
           className="w-full"
-          onClick={() => onLock(solution.id)}
+          onClick={() => onLock()}
           disabled={isLocking || isLocked}
         >
           {isLocked ? "In use" : isLocking ? "Saving…" : "Use this plan"}

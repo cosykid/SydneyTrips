@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2, MinusCircle, PlusCircle, Sparkles } from "lucide-react";
+import { Loader2, MinusCircle, PlusCircle, Route } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -140,9 +140,10 @@ function WhatIfDialogBody({
   }
 
   async function onAccept(): Promise<void> {
-    if (!newSolution) return;
+    if (!newSolution || !activeRunId) return;
     try {
-      await lockMut.mutateAsync({ tripId, body: { solutionId: newSolution.id } });
+      // One solution per run, so it's always the first (and only) entry.
+      await lockMut.mutateAsync({ tripId, body: { runId: activeRunId, paretoIndex: 0 } });
       toast.success("New plan saved");
       onOpenChange(false);
     } catch (err) {
@@ -349,7 +350,7 @@ function WhatIfDialogBody({
                 {computing ? (
                   <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Sparkles className="mr-1 h-3.5 w-3.5" />
+                  <Route className="mr-1 h-3.5 w-3.5" />
                 )}
                 Recalculate
               </Button>

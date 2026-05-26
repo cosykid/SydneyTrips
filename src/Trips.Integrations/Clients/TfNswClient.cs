@@ -27,6 +27,19 @@ internal sealed class TfNswClient : ITfNswClient
     /// <summary>Name used by <see cref="IHttpClientFactory"/> to resolve the configured client.</summary>
     public const string HttpClientName = "TfNsw";
 
+    /// <summary>How many alternative itineraries to ask EFA for, so <see cref="MapTripPlan"/> can choose.</summary>
+    private const int CalcNumberOfTrips = 6;
+
+    /// <summary>
+    /// Per-PT-leg soft penalty (minutes) for buses. Rail-class modes (train/metro/light rail) run
+    /// frequently and predictably, so they cost 0; a bus leg costs this much, standing in for the
+    /// typically-longer wait + lower reliability. A bus is only beaten by rail within this margin.
+    /// </summary>
+    private const int BusModePenaltyMins = 4;
+
+    /// <summary>Soft penalty (minutes) per interchange — each transfer adds wait + missed-connection risk.</summary>
+    private const int TransferPenaltyMins = 5;
+
     private static readonly GeometryFactory GeometryFactory =
         new(new PrecisionModel(), 4326);
 
@@ -62,7 +75,10 @@ internal sealed class TfNswClient : ITfNswClient
             .Add("name_origin", $"{origin.X.ToString(CultureInfo.InvariantCulture)}:{origin.Y.ToString(CultureInfo.InvariantCulture)}:EPSG:4326")
             .Add("type_destination", "coord")
             .Add("name_destination", $"{destination.X.ToString(CultureInfo.InvariantCulture)}:{destination.Y.ToString(CultureInfo.InvariantCulture)}:EPSG:4326")
-            .Add("calcNumberOfTrips", "1")
+            // Ask for several itineraries, not one. We used to send 1 and take Journeys[0] blindly,
+            // which let a bus that departs a minute sooner beat a light-rail/train option that is
+            // "usually" faster and far more frequent. MapTripPlan now picks among these by cost.
+            .Add("calcNumberOfTrips", CalcNumberOfTrips.ToString(CultureInfo.InvariantCulture))
             .Build();
 
         using var scope = _logger.BeginScope(new Dictionary<string, object?>
@@ -202,14 +218,41 @@ internal sealed class TfNswClient : ITfNswClient
             return new TfNswTripPlan(Array.Empty<TfNswJourneyLeg>(), 0, 0);
         }
 
-        var first = payload.Journeys[0];
-        var legs = new List<TfNswJourneyLeg>(first.Legs?.Count ?? 0);
+        // Map every returned itinerary and keep the cheapest by ScoreJourney. EFA's own ordering is
+        // the tiebreaker — we only replace `best` on a strictly-lower score, so equal-cost options
+        // defer to the planner's ranking (i.e. its first/earliest journey).
+        TfNswTripPlan? best = null;
+        var bestScore = double.MaxValue;
+        foreach (var journey in payload.Journeys)
+        {
+            var plan = MapJourney(journey);
+            // Skip empty / "teleport" journeys (no walk + no PT). Mirrors TryAdmitProbedHub's guard:
+            // a zero-minute plan is "no journey", not a free pickup.
+            if (plan.TotalWalkMins + plan.TotalPtMins <= 0)
+            {
+                continue;
+            }
+
+            var score = ScoreJourney(plan);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = plan;
+            }
+        }
+
+        return best ?? new TfNswTripPlan(Array.Empty<TfNswJourneyLeg>(), 0, 0);
+    }
+
+    private static TfNswTripPlan MapJourney(JourneyDto journey)
+    {
+        var legs = new List<TfNswJourneyLeg>(journey.Legs?.Count ?? 0);
         int walk = 0;
         int pt = 0;
 
-        if (first.Legs is not null)
+        if (journey.Legs is not null)
         {
-            foreach (var leg in first.Legs)
+            foreach (var leg in journey.Legs)
             {
                 var mode = leg.Transportation?.Product?.Class is int c
                     ? ClassifyMode(c)
@@ -242,6 +285,23 @@ internal sealed class TfNswClient : ITfNswClient
         }
 
         return new TfNswTripPlan(legs, walk, pt);
+    }
+
+    /// <summary>
+    /// Cost of a journey in "equivalent minutes" — total travel time plus soft penalties that
+    /// nudge selection toward higher-frequency, lower-risk options. Lower wins. The penalties are
+    /// deliberately small: a bus only loses to rail when the two are within a few minutes, so a
+    /// genuinely faster bus still wins. See <see cref="BusModePenaltyMins"/>/<see cref="TransferPenaltyMins"/>.
+    /// </summary>
+    private static double ScoreJourney(TfNswTripPlan plan)
+    {
+        var ptLegs = plan.Legs.Count(l => l.Mode != "walk");
+        var busLegs = plan.Legs.Count(l => l.Mode == "bus");
+        var transfers = Math.Max(0, ptLegs - 1);
+        return plan.TotalWalkMins
+            + plan.TotalPtMins
+            + (busLegs * BusModePenaltyMins)
+            + (transfers * TransferPenaltyMins);
     }
 
     private static IReadOnlyList<TfNswCoordinateStop> MapCoordResponse(CoordResponse? payload)
@@ -372,13 +432,19 @@ internal sealed class TfNswClient : ITfNswClient
         return points.Count > 0 ? points : null;
     }
 
+    // TfNSW EFA product classes. 99 and 100 are both "footpath" — 100 is the origin/destination
+    // walk, 99 is a walking transfer/connector between PT legs; both are walking, not a vehicle.
+    // 7 (coach) and 11 (school bus) are road services we render like a bus.
     private static string ClassifyMode(int productClass) => productClass switch
     {
         1 => "train",
         2 => "metro",
         4 => "lightrail",
         5 => "bus",
+        7 => "bus",
         9 => "ferry",
+        11 => "bus",
+        99 => "walk",
         100 => "walk",
         _ => "unknown",
     };

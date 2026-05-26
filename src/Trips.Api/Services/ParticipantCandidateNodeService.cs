@@ -188,6 +188,7 @@ public sealed class ParticipantCandidateNodeService
             if (!seen.TryAdd(key, 0)) continue;
 
             var path = BuildPathLineString(plan.Legs, prefixLength: i + 1);
+            var pathLegs = BuildPathLegs(plan.Legs, prefixLength: i + 1);
 
             participant.AddCandidateNode(new CandidateNode(
                 id: Guid.NewGuid(),
@@ -197,7 +198,8 @@ public sealed class ParticipantCandidateNodeService
                 walkMins: totalWalk,
                 ptMins: totalPt,
                 displayName: leg.ToName ?? $"{leg.Mode} stop",
-                path: path));
+                path: path,
+                pathLegs: pathLegs));
         }
     }
 
@@ -214,6 +216,14 @@ public sealed class ParticipantCandidateNodeService
         Dictionary<string, byte> seen)
     {
         if (probe is null) return;
+        // A zero-minute plan means TfNSW produced no journey — a past/invalid departure date, a
+        // rate-limited call, or genuinely no route. MapTripPlan surfaces that as a *non-null* plan
+        // with no legs and zero minutes (you can't reach a distinct hub in 0 minutes, so a real
+        // plan always totals > 0). Admitting it fabricates a free, geometry-less "teleport" pickup:
+        // the solver sees a zero-cost hub and the map can only draw it as a crow-fly line. Treat it
+        // like a null probe and skip the hub — the passenger keeps Home (and Channel 3 can still
+        // try) rather than gaining a phantom pickup.
+        if (probe.TotalWalkMins + probe.TotalPtMins <= 0) return;
         if (probe.TotalWalkMins + probe.TotalPtMins > MaxAccessMins) return;
 
         var key = GeoBucketKey(hub.Location);
@@ -222,6 +232,7 @@ public sealed class ParticipantCandidateNodeService
         // The probe plan IS the home→hub journey, so its legs in full form the path; truncating
         // would clip off any final walk that's part of reaching the meeting point.
         var path = BuildPathLineString(probe.Legs, prefixLength: probe.Legs.Count);
+        var pathLegs = BuildPathLegs(probe.Legs, prefixLength: probe.Legs.Count);
 
         participant.AddCandidateNode(new CandidateNode(
             id: Guid.NewGuid(),
@@ -232,7 +243,8 @@ public sealed class ParticipantCandidateNodeService
             ptMins: probe.TotalPtMins,
             externalId: hub.StopId,
             displayName: hub.Name,
-            path: path));
+            path: path,
+            pathLegs: pathLegs));
     }
 
     /// <summary>Memoised accessor for the per-trip meeting-hub pool — computed on the first
@@ -380,6 +392,30 @@ public sealed class ParticipantCandidateNodeService
         if (coords.Count < 2) return null;
         var factory = new GeometryFactory(new PrecisionModel(), 4326);
         return factory.CreateLineString(coords.ToArray());
+    }
+
+    /// <summary>
+    /// The first <paramref name="prefixLength"/> legs as mode-tagged segments, preserving each
+    /// leg's TfNSW mode ("walk" / "train" / "bus" / "ferry" / "lightrail" / …) and geometry so the
+    /// map can colour them separately. Legs without geometry are skipped; returns null when none
+    /// survive (stub clients, pre-feature cached plans) — callers fall back to the flattened path.
+    /// </summary>
+    private static IReadOnlyList<PathLeg>? BuildPathLegs(IReadOnlyList<TfNswJourneyLeg> legs, int prefixLength)
+    {
+        var result = new List<PathLeg>();
+        for (var i = 0; i < prefixLength && i < legs.Count; i++)
+        {
+            var leg = legs[i];
+            var poly = leg.Polyline;
+            if (poly is null || poly.Count < 2) continue;
+            var points = new List<PathPoint>(poly.Count);
+            foreach (var p in poly)
+            {
+                points.Add(new PathPoint(p.X, p.Y));
+            }
+            result.Add(new PathLeg(leg.Mode, points));
+        }
+        return result.Count > 0 ? result : null;
     }
 
     private async Task<TfNswTripPlan?> SafeTripPlanAsync(

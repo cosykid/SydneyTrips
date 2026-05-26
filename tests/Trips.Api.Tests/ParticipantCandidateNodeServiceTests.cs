@@ -83,6 +83,37 @@ public sealed class ParticipantCandidateNodeServiceTests
             "the fallback admits a reachable nearby stop so the passenger isn't reducible to a doorstep pickup");
     }
 
+    [Fact]
+    public async Task Skips_a_hub_whose_probe_returns_no_journey_instead_of_admitting_a_zero_minute_pickup()
+    {
+        // Regression: when TfNSW produces no journey for a probe (a past/invalid departure date, a
+        // rate-limited call, or genuinely no route), MapTripPlan returns a non-null plan with no
+        // legs and zero minutes. That used to be admitted as a free, geometry-less 0-minute hub —
+        // which the planner map could only draw as a crow-fly straight line. It must be skipped.
+        var dest = Pt(151.01, -33.78);
+        var driverHome = Pt(151.10, -33.81);
+        var passengerHome = Pt(151.20, -33.89);
+        var hub = Pt(151.11, -33.80);
+
+        var tfnsw = new FakeTfNswClient
+        {
+            // The hub is offered near the driver, but the passenger's probe to it comes back empty.
+            // No passenger-home stops, so the fallback channel can't mask the behaviour either.
+            CoordResponder = (origin, _) => Same(origin, driverHome)
+                ? new[] { Stop("dead", "Dead Hub", hub) }
+                : Array.Empty<TfNswCoordinateStop>(),
+        };
+        tfnsw.Plan((passengerHome, hub), EmptyPlan(walk: 0, pt: 0)); // no journey
+
+        var (trip, passenger) = BuildTrip(dest, driverHome, passengerHome, walkBudget: 12);
+        var sut = new ParticipantCandidateNodeService(tfnsw, NullLogger<ParticipantCandidateNodeService>.Instance);
+
+        await sut.PopulateAsync(passenger, trip, CancellationToken.None);
+
+        passenger.CandidateNodes.Should().OnlyContain(n => n.Kind == NodeKind.Home,
+            "a probe yielding no journey must not become a phantom zero-minute pickup");
+    }
+
     // ---------- helpers ----------
 
     private static (Trip trip, Participant passenger) BuildTrip(Point dest, Point driverHome, Point passengerHome, int walkBudget)

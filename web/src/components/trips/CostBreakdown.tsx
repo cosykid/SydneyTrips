@@ -10,16 +10,19 @@
 // "what we can render" and tolerate zeros + missing breakdowns gracefully.
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { useCostSplit, useTrip } from "@/lib/api/hooks";
 import { DEFAULT_COST_INPUTS } from "@/lib/api/schema";
 import type { CostSplit } from "@/lib/api/schema";
+import { useMapBackdrop, type MapPin as Pin } from "@/lib/mapStore";
+import { SYDNEY_CBD } from "@/lib/store";
 
 type SortKey = "name" | "amount" | "fuel" | "tolls";
 type SortDir = "asc" | "desc";
@@ -90,6 +93,29 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
   const [inputs, setInputs] = useState(DEFAULT_COST_INPUTS);
   const [sortKey, setSortKey] = useState<SortKey>("amount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const setFocus = useMapBackdrop((s) => s.setFocus);
+  const clearFocus = useMapBackdrop((s) => s.clear);
+
+  // Keep the trip on the map behind the cost panel.
+  const tripData = trip.data;
+  useEffect(() => {
+    if (!tripData) return;
+    const pins: Pin[] = [
+      { id: "dest", position: tripData.destination, label: tripData.destinationAddress, kind: "destination" },
+      ...tripData.participants.map((p) => ({
+        id: `p-${p.id}`,
+        position: p.origin,
+        label: p.displayName,
+        kind: (p.role === "driver" ? "driver" : "home") as Pin["kind"],
+      })),
+    ];
+    setFocus({
+      pins,
+      center: { lat: SYDNEY_CBD.latitude, lng: SYDNEY_CBD.longitude },
+      zoom: SYDNEY_CBD.zoom,
+    });
+    return () => clearFocus();
+  }, [tripData, setFocus, clearFocus]);
 
   // Debounce refetch when the user tweaks the cost inputs. The mock endpoint
   // doesn't yet take these as query params, but the UI is correct in advance
@@ -157,30 +183,49 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
 
   if (trip.isLoading) {
     return (
-      <div className="text-muted-foreground flex items-center gap-2 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading trip…
-      </div>
+      <Card variant="floating" className="px-5 py-4">
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading trip…
+        </div>
+      </Card>
     );
   }
 
   if (!trip.data?.hasLockedSolution) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="text-muted-foreground py-10 text-center text-sm">
+      <Card variant="floating" className="gap-0 px-5 py-4">
+        <Link
+          href={`/trips/${tripId}`}
+          className="text-muted-foreground hover:text-foreground mb-3 inline-flex items-center gap-1 text-xs"
+        >
+          <ArrowLeft className="h-3 w-3" /> Trip overview
+        </Link>
+        <p className="text-muted-foreground text-sm">
           Choose a plan from the planner first — the cost split needs a confirmed route.
-        </CardContent>
+        </p>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Cost inputs</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
+    <Card variant="floating" className="max-h-[calc(100vh-2rem)] gap-0 overflow-y-auto py-0">
+      <div className="px-5 pt-4 pb-3">
+        <Link
+          href={`/trips/${tripId}`}
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
+        >
+          <ArrowLeft className="h-3 w-3" /> Trip overview
+        </Link>
+        <h1 className="text-foreground mt-1.5 text-xl font-medium tracking-tight">Cost split</h1>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          Fuel + tolls shared by each passenger&apos;s distance aboard.
+        </p>
+      </div>
+      <Separator />
+
+      <div className="space-y-3 px-5 py-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
             <Label htmlFor="fuel-price">Fuel price (A$/L)</Label>
             <Input
               id="fuel-price"
@@ -189,16 +234,13 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
               min={0}
               value={inputs.fuelPricePerLitre}
               onChange={(e) =>
-                setInputs((p) => ({
-                  ...p,
-                  fuelPricePerLitre: Number(e.target.value) || 0,
-                }))
+                setInputs((p) => ({ ...p, fuelPricePerLitre: Number(e.target.value) || 0 }))
               }
               data-testid="fuel-price-input"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="fuel-economy">Fuel economy (L/100 km)</Label>
+          <div className="space-y-1">
+            <Label htmlFor="fuel-economy">Economy (L/100 km)</Label>
             <Input
               id="fuel-economy"
               type="number"
@@ -206,55 +248,55 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
               min={0}
               value={inputs.litresPer100Km}
               onChange={(e) =>
-                setInputs((p) => ({
-                  ...p,
-                  litresPer100Km: Number(e.target.value) || 0,
-                }))
+                setInputs((p) => ({ ...p, litresPer100Km: Number(e.target.value) || 0 }))
               }
               data-testid="fuel-economy-input"
             />
           </div>
-          <div className="flex items-end justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setInputs(DEFAULT_COST_INPUTS)}
-              disabled={
-                inputs.fuelPricePerLitre === DEFAULT_COST_INPUTS.fuelPricePerLitre &&
-                inputs.litresPer100Km === DEFAULT_COST_INPUTS.litresPer100Km
-              }
-            >
-              Reset
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={downloadCsv}
-              data-testid="export-csv"
-              disabled={rows.length === 0}
-            >
-              <Download className="mr-1 h-3.5 w-3.5" />
-              Export CSV
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setInputs(DEFAULT_COST_INPUTS)}
+            disabled={
+              inputs.fuelPricePerLitre === DEFAULT_COST_INPUTS.fuelPricePerLitre &&
+              inputs.litresPer100Km === DEFAULT_COST_INPUTS.litresPer100Km
+            }
+          >
+            Reset
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadCsv}
+            data-testid="export-csv"
+            disabled={rows.length === 0}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle className="text-base">Per-person breakdown</CardTitle>
+      <Separator />
+      <div className="px-5 py-4">
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
+            Per-person breakdown
+          </p>
           {split.isFetching ? (
             <Loader2 className="text-muted-foreground h-3.5 w-3.5 animate-spin" />
           ) : null}
-        </CardHeader>
-        <CardContent>
-          {split.isError ? (
-            <p className="text-destructive text-sm" role="alert">
-              Could not load cost split: {split.error?.message ?? "unknown error"}
-            </p>
-          ) : null}
-          <table className="w-full text-sm" data-testid="cost-table">
+        </div>
+        {split.isError ? (
+          <p className="text-destructive text-sm" role="alert">
+            Could not load cost split: {split.error?.message ?? "unknown error"}
+          </p>
+        ) : null}
+        <table className="w-full text-sm" data-testid="cost-table">
             <thead>
               <tr className="text-muted-foreground border-b text-xs uppercase tracking-wider">
                 <ThButton onClick={() => toggleSort("name")} active={sortKey === "name"} dir={sortDir} align="left">
@@ -310,18 +352,17 @@ export function CostBreakdown({ tripId }: { tripId: string }): React.JSX.Element
               </tr>
             </tfoot>
           </table>
-          {totals.driversAtZero && driverIds.size > 0 ? (
-            <>
-              <Separator className="my-4" />
-              <p className="text-success text-xs">
-                Driver pays nothing — passengers cover fuel and tolls in proportion to the distance
-                they were aboard.
-              </p>
-            </>
-          ) : null}
-        </CardContent>
-      </Card>
-    </div>
+        {totals.driversAtZero && driverIds.size > 0 ? (
+          <>
+            <Separator className="my-4" />
+            <p className="text-success text-xs">
+              Driver pays nothing — passengers cover fuel and tolls in proportion to the distance
+              they were aboard.
+            </p>
+          </>
+        ) : null}
+      </div>
+    </Card>
   );
 }
 

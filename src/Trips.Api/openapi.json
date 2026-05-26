@@ -6,7 +6,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:5050/"
+      "url": "http://localhost:5051/"
     }
   ],
   "paths": {
@@ -1633,6 +1633,21 @@
           }
         }
       },
+      "PathLegDto": {
+        "required": [
+          "mode",
+          "path"
+        ],
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string"
+          },
+          "path": {
+            "$ref": "#/components/schemas/PathDto"
+          }
+        }
+      },
       "PickupLegDto": {
         "required": [
           "participantId",
@@ -1671,6 +1686,15 @@
                 "$ref": "#/components/schemas/PathDto"
               }
             ]
+          },
+          "pathLegs": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PathLegDto"
+            }
           }
         }
       },

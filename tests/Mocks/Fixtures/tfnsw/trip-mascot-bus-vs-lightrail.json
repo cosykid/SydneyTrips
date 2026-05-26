@@ -1,0 +1,112 @@
+{
+  "version": "10.2.1.42",
+  "systemMessages": [],
+  "journeys": [
+    {
+      "rating": 0,
+      "isAdditional": false,
+      "interchanges": 1,
+      "legs": [
+        {
+          "duration": 180,
+          "origin": {
+            "id": "origin",
+            "name": "Mascot",
+            "type": "poi",
+            "coord": [151.1934, -33.9303]
+          },
+          "destination": {
+            "id": "203311",
+            "name": "Gardeners Rd at Mascot",
+            "type": "stop",
+            "coord": [151.1948, -33.9281]
+          },
+          "transportation": {
+            "id": "walk",
+            "name": "Walk",
+            "disassembledName": "walk",
+            "product": { "name": "Walk", "class": 100, "iconId": 100 }
+          }
+        },
+        {
+          "duration": 1680,
+          "origin": {
+            "id": "203311",
+            "name": "Gardeners Rd at Mascot",
+            "type": "stop",
+            "coord": [151.1948, -33.9281],
+            "departureTimePlanned": "2025-06-02T08:01:00Z"
+          },
+          "destination": {
+            "id": "200070",
+            "name": "Central Station",
+            "type": "stop",
+            "coord": [151.2070, -33.8830],
+            "arrivalTimePlanned": "2025-06-02T08:29:00Z"
+          },
+          "transportation": {
+            "id": "343",
+            "name": "Kingsford to City",
+            "disassembledName": "343",
+            "number": "343",
+            "description": "343 route",
+            "product": { "name": "Bus", "class": 5, "iconId": 5 }
+          }
+        }
+      ]
+    },
+    {
+      "rating": 1,
+      "isAdditional": false,
+      "interchanges": 1,
+      "legs": [
+        {
+          "duration": 180,
+          "origin": {
+            "id": "origin",
+            "name": "Mascot",
+            "type": "poi",
+            "coord": [151.1934, -33.9303]
+          },
+          "destination": {
+            "id": "2034144",
+            "name": "Kingsford Light Rail",
+            "type": "stop",
+            "coord": [151.2235, -33.9243]
+          },
+          "transportation": {
+            "id": "walk",
+            "name": "Walk",
+            "disassembledName": "walk",
+            "product": { "name": "Walk", "class": 100, "iconId": 100 }
+          }
+        },
+        {
+          "duration": 1800,
+          "origin": {
+            "id": "2034144",
+            "name": "Kingsford Light Rail",
+            "type": "stop",
+            "coord": [151.2235, -33.9243],
+            "departureTimePlanned": "2025-06-02T08:03:00Z"
+          },
+          "destination": {
+            "id": "203146",
+            "name": "Central Chalmers St Light Rail",
+            "type": "stop",
+            "coord": [151.2068, -33.8836],
+            "arrivalTimePlanned": "2025-06-02T08:33:00Z"
+          },
+          "transportation": {
+            "id": "L3",
+            "name": "L3 Kingsford Line",
+            "disassembledName": "L3",
+            "number": "L3",
+            "description": "L3 light rail",
+            "product": { "name": "Light Rail", "class": 4, "iconId": 4 }
+          }
+        }
+      ]
+    }
+  ]
+}

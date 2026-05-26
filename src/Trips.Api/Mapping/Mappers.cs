@@ -147,6 +147,7 @@ internal static class Mappers
         // per-leg so co-located passengers (who collapse to one canonical SolverNode) each keep
         // their own path instead of all inheriting the canonical node's.
         var pathByPidAndKey = new Dictionary<(Guid Participant, string Key), PathDto?>();
+        var pathLegsByPidAndKey = new Dictionary<(Guid Participant, string Key), IReadOnlyList<PathLegDto>?>();
         if (trip is not null)
         {
             foreach (var participant in trip.Participants)
@@ -158,6 +159,7 @@ internal static class Mappers
                     kindByKey.TryAdd(key, cn.Kind);
                     legsByPidAndKey[(participant.Id, key)] = (cn.WalkMins, cn.PtMins);
                     pathByPidAndKey[(participant.Id, key)] = ToPathDto(cn.Path);
+                    pathLegsByPidAndKey[(participant.Id, key)] = ToPathLegDtos(cn.PathLegs);
                 }
             }
         }
@@ -197,7 +199,8 @@ internal static class Mappers
                                 {
                                     var legs = legsByPidAndKey.TryGetValue((pid, key), out var l) ? l : (Walk: 0, Pt: 0);
                                     pathByPidAndKey.TryGetValue((pid, key), out var path);
-                                    return new PickupLegDto(pid, legs.Walk, legs.Pt, path);
+                                    pathLegsByPidAndKey.TryGetValue((pid, key), out var pathLegs);
+                                    return new PickupLegDto(pid, legs.Walk, legs.Pt, path, pathLegs);
                                 }
                                 return new PickupLegDto(pid, WalkMins: 0, PtMins: 0, Path: null);
                             })
@@ -235,5 +238,21 @@ internal static class Mappers
             coords.Add(new PathCoordinateDto(Longitude: c.X, Latitude: c.Y));
         }
         return new PathDto(coords);
+    }
+
+    private static IReadOnlyList<PathLegDto>? ToPathLegDtos(IReadOnlyList<PathLeg>? legs)
+    {
+        if (legs is null || legs.Count == 0) return null;
+        var result = new List<PathLegDto>(legs.Count);
+        foreach (var leg in legs)
+        {
+            var coords = new List<PathCoordinateDto>(leg.Points.Count);
+            foreach (var p in leg.Points)
+            {
+                coords.Add(new PathCoordinateDto(Longitude: p.Lng, Latitude: p.Lat));
+            }
+            result.Add(new PathLegDto(leg.Mode, new PathDto(coords)));
+        }
+        return result;
     }
 }

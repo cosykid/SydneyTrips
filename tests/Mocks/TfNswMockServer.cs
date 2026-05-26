@@ -54,6 +54,9 @@ public sealed class TfNswMockServer : IDisposable
         RegisterTripPlan(fixturesRoot, "151.2073", "tfnsw/trip-cbd-to-bondi.json");
         RegisterTripPlan(fixturesRoot, "151.0021", "tfnsw/trip-parramatta-to-manly.json");
         RegisterTripPlan(fixturesRoot, "151.1832", "tfnsw/trip-chatswood-to-cronulla.json");
+        // Two journeys: a faster 343 bus (ranked first by EFA) vs a slightly slower but
+        // higher-frequency L3 light rail. Exercises MapTripPlan's cost-based selection.
+        RegisterTripPlan(fixturesRoot, "151.1934", "tfnsw/trip-mascot-bus-vs-lightrail.json");
 
         // Fallback trip-plan when no other match — registered first so others win.
         _server

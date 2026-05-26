@@ -46,6 +46,33 @@ public sealed class CachingDecoratorTests
     }
 
     [Fact]
+    public async Task TfNsw_cached_trip_plan_preserves_leg_geometry_and_stop_names()
+    {
+        // Regression: the cache used to drop Polyline/FromName/ToName on round-trip, so any cache
+        // hit yielded legs with null geometry — which collapsed each candidate node's PT path to
+        // null and made the planner map draw crow-fly straight lines instead of the real route.
+        var inner = new GeometryBearingTfNsw();
+        var cache = new InMemoryIntegrationCache();
+        var decorator = new CachingTfNswClient(inner, cache, CacheOptions);
+
+        var origin = Geom.CreatePoint(new Coordinate(151.2073, -33.8730));
+        var destination = Geom.CreatePoint(new Coordinate(151.2796, -33.8908));
+        var departAt = new DateTimeOffset(2025, 1, 15, 8, 0, 0, TimeSpan.Zero);
+
+        await decorator.TripPlanAsync(origin, destination, departAt, CancellationToken.None);
+        var cached = await decorator.TripPlanAsync(origin, destination, departAt, CancellationToken.None);
+
+        inner.Calls.Should().Be(1, "second call should hit the cache");
+        var leg = cached.Legs.Should().ContainSingle().Subject;
+        leg.FromName.Should().Be("Town Hall");
+        leg.ToName.Should().Be("Bondi Junction");
+        leg.Polyline.Should().NotBeNull();
+        leg.Polyline!.Should().HaveCount(3);
+        leg.Polyline![1].X.Should().BeApproximately(151.24, 1e-9);
+        leg.Polyline![1].Y.Should().BeApproximately(-33.88, 1e-9);
+    }
+
+    [Fact]
     public async Task TfNsw_coordinate_request_caches_by_origin_and_radius()
     {
         var inner = new CountingTfNsw();
@@ -154,6 +181,39 @@ public sealed class CachingDecoratorTests
                 new TfNswDeparture(stopId, "T4", @from, @from.AddMinutes(1), "VEH-1"),
             });
         }
+
+        public async IAsyncEnumerable<TfNswGtfsTripUpdate> GtfsRtTripUpdatesAsync(string mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    /// <summary>Returns a single train leg carrying a polyline and stop names, so the cache
+    /// round-trip of <see cref="TfNswJourneyLeg.Polyline"/>/<c>FromName</c>/<c>ToName</c> is exercised.</summary>
+    private sealed class GeometryBearingTfNsw : ITfNswClient
+    {
+        public int Calls;
+
+        public Task<TfNswTripPlan> TripPlanAsync(Point origin, Point destination, DateTimeOffset departAt, CancellationToken ct)
+        {
+            Calls++;
+            var polyline = new[]
+            {
+                Geom.CreatePoint(new Coordinate(151.2069, -33.8743)),
+                Geom.CreatePoint(new Coordinate(151.24, -33.88)),
+                Geom.CreatePoint(new Coordinate(151.2503, -33.8918)),
+            };
+            var leg = new TfNswJourneyLeg("train", 12, origin, destination, "T4",
+                FromName: "Town Hall", ToName: "Bondi Junction", Polyline: polyline);
+            return Task.FromResult(new TfNswTripPlan(new[] { leg }, 0, 12));
+        }
+
+        public Task<IReadOnlyList<TfNswCoordinateStop>> CoordinateRequestAsync(Point origin, int radiusMeters, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<TfNswCoordinateStop>>(Array.Empty<TfNswCoordinateStop>());
+
+        public Task<IReadOnlyList<TfNswDeparture>> DepartureAsync(string stopId, DateTimeOffset @from, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<TfNswDeparture>>(Array.Empty<TfNswDeparture>());
 
         public async IAsyncEnumerable<TfNswGtfsTripUpdate> GtfsRtTripUpdatesAsync(string mode, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
         {

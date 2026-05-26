@@ -177,7 +177,7 @@ export function MapFallback(props: MapFallbackProps): React.JSX.Element {
               cx={o.projected.x}
               cy={o.projected.y}
               r={o.role === "driver" ? 8 : 5}
-              fill="#1A73E8"
+              fill="#0E7C86"
               stroke="#FFFFFF"
               strokeWidth={2}
             />
@@ -210,7 +210,7 @@ export function MapFallback(props: MapFallbackProps): React.JSX.Element {
               cx={driver.x}
               cy={driver.y}
               r={12}
-              fill="#1A73E8"
+              fill="#0E7C86"
               stroke="#FFFFFF"
               strokeWidth={3}
             />
