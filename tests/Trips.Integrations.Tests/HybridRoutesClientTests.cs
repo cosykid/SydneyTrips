@@ -6,9 +6,10 @@ using Trips.Integrations.Clients;
 namespace Trips.Integrations.Tests;
 
 /// <summary>
-/// Verifies <see cref="HybridRoutesClient"/>'s dispatch: free-flow (planning) matrices go to the
-/// OSRM free-flow source, traffic-aware (live ETA) matrices and polylines stay on Google, and with
-/// no OSRM configured everything forwards to Google unchanged.
+/// Verifies <see cref="HybridRoutesClient"/>'s dispatch: with OSRM configured, every matrix —
+/// planning (free-flow) <em>and</em> traffic-aware (live ETA) — is served by OSRM so Google's Route
+/// Matrix is never called; the polyline still goes to Google; and with no OSRM configured everything
+/// forwards to Google unchanged.
 /// </summary>
 public sealed class HybridRoutesClientTests
 {
@@ -29,17 +30,18 @@ public sealed class HybridRoutesClientTests
     }
 
     [Fact]
-    public async Task Traffic_aware_matrix_is_served_by_google_not_osrm()
+    public async Task Traffic_aware_matrix_is_also_served_by_osrm_not_google()
     {
+        // OSRM serves the live-ETA matrix too: a free-flow estimate, but a hard zero on Google's
+        // Route Matrix spend. Google is never called for any matrix while OSRM is configured.
         var google = new RecordingGoogle();
         var osrm = new RecordingFreeFlow();
         var hybrid = new HybridRoutesClient(google, osrm);
 
         await hybrid.ComputeRouteMatrixAsync(Pts, Pts, trafficAware: true, CancellationToken.None);
 
-        google.MatrixCalls.Should().Be(1);
-        google.LastTrafficAware.Should().BeTrue();
-        osrm.Calls.Should().Be(0);
+        osrm.Calls.Should().Be(1);
+        google.MatrixCalls.Should().Be(0);
     }
 
     [Fact]

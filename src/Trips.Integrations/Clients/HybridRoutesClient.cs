@@ -4,18 +4,21 @@ using Trips.Core.Abstractions;
 namespace Trips.Integrations.Clients;
 
 /// <summary>
-/// <see cref="IGoogleRoutesClient"/> that splits the travel-time matrix by traffic-awareness:
-/// free-flow (planning) matrices go to a self-hosted <see cref="IFreeFlowMatrixClient"/> (OSRM) at
-/// zero marginal cost, while traffic-aware (live ETA) matrices and the polyline
-/// <see cref="ComputeRoutesAsync"/> stay on Google. This is the seam that takes the project's
-/// dominant external cost — the per-element Route Matrix on the planning path — off Google entirely.
+/// <see cref="IGoogleRoutesClient"/> that routes <em>every</em> travel-time matrix — planning
+/// (free-flow) and live-ETA alike — to a self-hosted <see cref="IFreeFlowMatrixClient"/> (OSRM) at
+/// zero marginal cost when one is configured, so Google's per-element Route Matrix is never called.
+/// Only the polyline <see cref="ComputeRoutesAsync"/> (a separate, low-volume "Compute Routes" SKU)
+/// stays on Google. With no OSRM configured, everything forwards to Google unchanged.
 /// </summary>
 /// <remarks>
-/// When the free-flow source is unavailable the call is <em>not</em> silently re-routed to Google:
-/// re-introducing billable calls on a transient OSRM blip is exactly the surprise cost we're
-/// removing. Instead the failure propagates, and <c>OptimisationRunner.EnrichWithDrivingMatrixAsync</c>
-/// keeps its haversine estimate for that one run — a bounded, free degradation. (Google is used for
-/// free-flow only when no OSRM source is wired at all, i.e. <c>Integrations:Osrm:BaseUrl</c> unset.)
+/// OSRM has no live traffic, so the live-ETA matrix served here is a free-flow estimate rather than
+/// a traffic-aware one — a deliberate trade for a hard zero on Google Route Matrix spend (the
+/// project's dominant external cost). When the free-flow source is unavailable the call is
+/// <em>not</em> re-routed to Google: re-introducing billable calls on a transient OSRM blip is
+/// exactly the surprise cost we're removing. Instead the failure propagates and callers degrade
+/// gracefully — <c>OptimisationRunner.EnrichWithDrivingMatrixAsync</c> keeps its haversine estimate;
+/// <c>EtaService</c> skips that ETA broadcast. Google serves the matrix only when no OSRM source is
+/// wired at all (<c>Integrations:Osrm:BaseUrl</c> unset).
 /// </remarks>
 internal sealed class HybridRoutesClient : IGoogleRoutesClient
 {
@@ -35,9 +38,11 @@ internal sealed class HybridRoutesClient : IGoogleRoutesClient
         bool trafficAware,
         CancellationToken ct)
     {
-        // Traffic-aware (live ETA) stays on Google — OSRM has no live traffic. Free-flow (planning)
-        // goes to OSRM when one is configured; otherwise to Google as before.
-        if (!trafficAware && _freeFlow is not null)
+        // When OSRM is configured it serves *every* matrix — planning and live ETA — so Google's
+        // per-element Route Matrix is never called. OSRM has no live traffic, so trafficAware is
+        // intentionally ignored: live ETAs become free-flow estimates, the deliberate trade for a
+        // hard zero on Google matrix spend. Google is reached only when no OSRM is wired at all.
+        if (_freeFlow is not null)
         {
             return _freeFlow.ComputeMatrixAsync(origins, destinations, ct);
         }

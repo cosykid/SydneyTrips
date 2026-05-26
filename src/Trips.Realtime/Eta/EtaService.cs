@@ -107,8 +107,10 @@ public sealed class EtaService
         double[,] matrix;
         try
         {
-            // trafficAware: true — the trip is happening now, so live traffic is the whole point of
-            // recomputing the ETA. This is the one path that should pay for the pricier matrix SKU.
+            // trafficAware: true expresses the intent — the trip is happening now, so a live-traffic
+            // ETA is ideal. Whether it's honoured depends on the wiring: with OSRM configured the
+            // HybridRoutesClient serves this from OSRM (a free-flow estimate, no live traffic) to keep
+            // Google's Route Matrix at zero spend; only a Google-only deployment pays the pricier SKU.
             matrix = await _routes.ComputeRouteMatrixAsync(new[] { origin }, destinations, trafficAware: true, ct).ConfigureAwait(false);
         }
         catch (Exception ex)

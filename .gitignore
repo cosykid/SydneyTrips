@@ -87,6 +87,9 @@ infra/data/
 **/postgres-data/
 **/redis-data/
 
+# OSRM routing data — generated locally from a Geofabrik extract (~1 GB); see docs/operations-cost.md
+infra/osrm/
+
 # =========================
 # macOS
 # =========================

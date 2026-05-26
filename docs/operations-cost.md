@@ -52,12 +52,18 @@ assuming a given volume is free — the allotment depends on your monthly call c
    a leg bill it once; a re-plan that adds one node bills only that node's new row + column, not the
    whole `n²` grid. Free-flow pairs live for `RouteMatrixTtl` (**14 days**); traffic-aware pairs for
    `TrafficAwareMatrixTtl` (**1 min**). The traffic flag is part of the key, so they never collide.
-4. **OSRM serves the planning matrix (the structural fix).** When `Integrations:Osrm:BaseUrl` is set,
-   `HybridRoutesClient` routes the free-flow (planning) matrix to a self-hosted OSRM instance — one
-   `/table` call returns the whole origins×destinations matrix locally, at **zero marginal cost** —
-   and keeps Google only for the traffic-aware ETA path and the locked-solution polyline. With no
-   OSRM configured it forwards everything to Google, exactly as before. **This is what makes planning
-   cost ~$0 regardless of cache hit rate.**
+4. **OSRM serves _every_ travel-time matrix (the structural fix).** When `Integrations:Osrm:BaseUrl`
+   is set, `HybridRoutesClient` routes **both** the planning (free-flow) matrix **and** the live-ETA
+   matrix to a self-hosted OSRM instance — one `/table` call returns the whole origins×destinations
+   matrix locally, at **zero marginal cost** — so Google's per-element Route Matrix is **never
+   called**. The trade: OSRM has no live traffic, so live ETAs become free-flow estimates rather than
+   traffic-aware ones. Google keeps only the locked-solution polyline (`ComputeRoutes`, a separate
+   SKU). With no OSRM configured it forwards everything to Google, exactly as before. **This is what
+   takes the Route Matrix bill to ~$0 regardless of cache hit rate.**
+
+   > If you'd rather pay for traffic-aware live ETAs, that's the one knob to reconsider: ETAs are the
+   > only matrix path that benefits from live traffic, and routing them back to Google means the
+   > `EtaService` path bills the pricier traffic-aware SKU (low volume — only during an active trip).
 
 Tunable in `Integrations:Cache` (`IntegrationCacheOptions`): `RouteMatrixTtl`,
 `TrafficAwareMatrixTtl`, `MatrixSnapDecimals`.
@@ -71,16 +77,22 @@ The `osrm` service in `infra/docker-compose.yml` is gated behind the `routing` p
 `docker compose up` doesn't try to start it before map data exists.
 
 **1. One-time data prep** (from `infra/`, fills `./osrm` with `region.osrm*`). Pick the smallest
-extract that covers your trips — a Sydney/NSW clip beats the whole continent for build time and RAM:
+extract that covers your trips — the **NSW** clip (~250 MB) covers Sydney and beats the whole
+continent (~900 MB) for build time and RAM:
 
 ```bash
 mkdir -p osrm && cd osrm
-curl -L -o region.osm.pbf https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf
+curl -L -o region.osm.pbf https://download.geofabrik.de/australia-oceania/australia/new-south-wales-latest.osm.pbf
 IMG=ghcr.io/project-osrm/osrm-backend:latest
-docker run --rm -v "$PWD:/data" $IMG osrm-extract  -p /opt/car.lua /data/region.osm.pbf
-docker run --rm -v "$PWD:/data" $IMG osrm-partition /data/region.osrm
-docker run --rm -v "$PWD:/data" $IMG osrm-customize /data/region.osrm
+docker run --rm --platform linux/amd64 -v "$PWD:/data" $IMG osrm-extract  -p /opt/car.lua /data/region.osm.pbf
+docker run --rm --platform linux/amd64 -v "$PWD:/data" $IMG osrm-partition /data/region.osrm
+docker run --rm --platform linux/amd64 -v "$PWD:/data" $IMG osrm-customize /data/region.osrm
 ```
+
+> `--platform linux/amd64` is required on Apple Silicon (arm64): the `osrm-backend` image ships
+> amd64-only, so Docker Desktop runs it under emulation (slower extract, but a one-time cost). Drop
+> the flag on a native amd64 host. The compose `osrm` service pins the same `platform:` for the same
+> reason.
 
 **2. Start the server:**
 
