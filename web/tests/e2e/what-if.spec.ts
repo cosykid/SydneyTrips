@@ -2,8 +2,7 @@
 // diff view surfaces the removed stops and a new solution becomes lockable.
 //
 // What-if is driven via the API (warm-start from the locked solution); the UI exposes the
-// diff in a modal — we mostly assert that the API round-trips a coherent diff. The screenshot
-// flow exercises the modal UI separately.
+// diff in a modal, and this test mostly asserts that the API round-trips a coherent diff.
 
 import { test, expect, request as playwrightRequest } from "@playwright/test";
 import { seed, useSession } from "./helpers";

@@ -3,7 +3,7 @@
 // Before WS8: GET /trips/{id} returned a flat trip; the frontend's
 // PlanCanvas / TripOverview / DriverView / CostBreakdown components silently
 // rendered an empty participants list because `participants[]` wasn't on the
-// wire. The README screenshots were SVG mockups.
+// wire.
 //
 // After WS8: GET /trips/{id} returns participants[] with each participant's
 // candidateNodes[] eager-loaded, and the FE hooks adapt the API DTO into

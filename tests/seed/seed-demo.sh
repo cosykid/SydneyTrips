@@ -2,9 +2,9 @@
 # Seed a demo "Group trip to Palm Beach" scenario against a running Trips.Api.
 #
 # Idempotent: re-running with the same DEMO_EMAIL drops any existing trip with
-# the same name owned by that user before re-creating, so the screenshot run
-# always starts from a known state. Pass --reset to wipe and start over even if
-# nothing has changed.
+# the same name owned by that user before re-creating, so E2E runs always start
+# from a known state. Pass --reset to wipe and start over even if nothing has
+# changed.
 #
 # Prerequisites:
 #   - docker compose -f infra/docker-compose.yml up -d         (Postgres + Redis healthy)
@@ -15,7 +15,6 @@
 #   /tmp/seed-demo.json   { sessionId, email, password, tripId, runId, lockedSolutionId, driverIds, passengerIds }
 #
 # Used by:
-#   - web/tests/screenshots.spec.ts            (logs in, navigates each page)
 #   - web/tests/e2e/single-driver.spec.ts      (uses a slimmed seed variant)
 #   - web/tests/e2e/multi-driver.spec.ts       (uses the full seed)
 #   - web/tests/e2e/what-if.spec.ts            (uses the full seed)
@@ -120,8 +119,8 @@ say "prime anonymous session cookie"
 api_get "/healthz" >/dev/null
 # The trips_session cookie is now in the jar (curl marks httpOnly cookies with a
 # #HttpOnly_ prefix on the domain field; awk's whitespace split still puts the name
-# in $6 and the value in $7). Downstream consumers (Playwright screenshots) inject
-# this value so the browser acts as the same anonymous owner that seeded the trip.
+# in $6 and the value in $7). Downstream Playwright tests inject this value so
+# the browser acts as the same anonymous owner that seeded the trip.
 SESSION_ID=$(awk '$6 == "trips_session" { print $7 }' "$COOKIE_JAR" | tail -1)
 [[ -n "$SESSION_ID" ]] || { echo "failed to capture trips_session cookie" >&2; exit 1; }
 note "session: $SESSION_ID"
