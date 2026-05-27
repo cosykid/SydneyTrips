@@ -15,14 +15,14 @@ const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:5000";
 
 export interface SeedResult {
   baseUrl: string;
-  token: string;
+  /** The anonymous-session GUID (value of the `trips_session` cookie) that owns the seeded trip.
+   *  Inject it into a browser context with {@link useSession} so the UI sees the same trip. */
+  sessionId: string;
   tripId: string;
   runId: string;
   lockedSolutionId: string;
   driverIds: string[];
   passengerIds: string[];
-  email: string;
-  password: string;
 }
 
 interface SeedOptions {
@@ -54,20 +54,14 @@ const PASSENGERS = [
 ];
 
 export async function seed(options: SeedOptions): Promise<SeedResult> {
+  // Auth is gone — the API stamps a `trips_session` cookie on the first request and this
+  // request context's cookie jar reuses it on every subsequent call, so the whole seed runs
+  // as one anonymous "browser". Prime the cookie up front, then read it back for the UI.
   const api = await playwrightRequest.newContext({ baseURL: API_BASE_URL });
-  const email = `e2e-${options.testTag}-${Date.now()}@sydneytrips.dev`;
-  const password = "E2E-PalmBeach!";
-
-  const reg = await api.post("/auth/register", {
-    data: { email, password, displayName: `E2E ${options.testTag}` },
-    failOnStatusCode: true,
-  });
-  const auth = (await reg.json()) as { accessToken: string };
-  const headers = { Authorization: `Bearer ${auth.accessToken}` };
+  await api.get("/healthz");
 
   const departAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const tripRes = await api.post("/trips", {
-    headers,
     data: {
       name: `E2E ${options.testTag} ${Date.now()}`,
       destinationName: "Palm Beach NSW",
@@ -88,7 +82,6 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
   for (let i = 0; i < nDrivers; i++) {
     const d = DRIVERS[i];
     const r = await api.post(`/trips/${trip.id}/participants`, {
-      headers,
       data: {
         displayName: d.name,
         homeLongitude: d.lng,
@@ -105,7 +98,6 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
   for (let i = 0; i < nPassengers; i++) {
     const p = PASSENGERS[i];
     const r = await api.post(`/trips/${trip.id}/participants`, {
-      headers,
       data: {
         displayName: p.name,
         homeLongitude: p.lng,
@@ -119,7 +111,6 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
   }
 
   const optRes = await api.post(`/trips/${trip.id}/optimise`, {
-    headers,
     data: {
       weights: { driveTime: 1, stopCount: 0.5, walkAndPt: 0.5, arrivalSpread: 0.3, fairness: 0.3 },
       solver: 1, // Heuristic — faster than OR-Tools and avoids the Phase B runner FK quirk.
@@ -128,10 +119,9 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
   });
   const run = (await optRes.json()) as { runId: string };
 
-  await waitForRun(api, headers, trip.id, run.runId);
+  await waitForRun(api, trip.id, run.runId);
 
   const lockRes = await api.post(`/trips/${trip.id}/lock-solution`, {
-    headers,
     data: { runId: run.runId, paretoIndex: 0 },
     failOnStatusCode: true,
   });
@@ -139,25 +129,26 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
 
   return {
     baseUrl: API_BASE_URL,
-    token: auth.accessToken,
+    sessionId: await readSessionId(api),
     tripId: trip.id,
     runId: run.runId,
     lockedSolutionId: lock.lockedSolutionId,
     driverIds,
     passengerIds,
-    email,
-    password,
   };
 }
 
-async function waitForRun(
-  api: APIRequestContext,
-  headers: { Authorization: string },
-  tripId: string,
-  runId: string,
-): Promise<void> {
+/** Pull the `trips_session` cookie value out of the request context's jar. */
+async function readSessionId(api: APIRequestContext): Promise<string> {
+  const state = await api.storageState();
+  const cookie = state.cookies.find((c) => c.name === "trips_session");
+  if (!cookie) throw new Error("API never set a trips_session cookie");
+  return cookie.value;
+}
+
+async function waitForRun(api: APIRequestContext, tripId: string, runId: string): Promise<void> {
   for (let i = 0; i < 120; i++) {
-    const res = await api.get(`/trips/${tripId}/runs/${runId}`, { headers });
+    const res = await api.get(`/trips/${tripId}/runs/${runId}`);
     if (res.ok()) {
       const body = (await res.json()) as { run: { status: string | number } };
       const status = String(body.run.status);
@@ -169,10 +160,10 @@ async function waitForRun(
   throw new Error(`run ${runId} did not finish within 60s`);
 }
 
-export async function loginViaUi(page: Page, email: string, password: string): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/trips/);
+/** Make a browser context act as the anonymous session that owns the seeded trip, by injecting
+ *  the same `trips_session` cookie. Call before navigating — there's no login page to drive. */
+export async function useSession(page: Page, sessionId: string): Promise<void> {
+  await page.context().addCookies([
+    { name: "trips_session", value: sessionId, domain: "localhost", path: "/" },
+  ]);
 }

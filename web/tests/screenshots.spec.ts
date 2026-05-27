@@ -1,27 +1,27 @@
-// Captures the five hero screenshots embedded in the top-level README.
+// Captures the hero screenshots embedded in the top-level README.
 //
 // Workflow:
-//   1. ./tests/seed/seed-demo.sh                      (creates a deterministic demo trip)
+//   1. ./tests/seed/seed-demo.sh                      (creates a deterministic demo trip + session)
 //   2. cd web && npm run dev                          (or your usual local Next.js server)
 //   3. cd web && npx playwright test tests/screenshots.spec.ts --headed
 //
-// Outputs land in docs/screenshots/*.png — paths are relative to the repo root.
+// Outputs land in docs/screenshots/*.png — paths are relative to the repo root. There's no login
+// page: each test injects the seeded `trips_session` cookie via useSession() before navigating.
 //
 // The Google Maps key is read from NEXT_PUBLIC_GOOGLE_MAPS_KEY. If unset, the map components
 // fall back to a deterministic SVG canvas (MapFallback) drawn from real coordinates — the
 // screenshots still render cleanly enough for the README; we just lose the basemap.
 
-import { test, expect } from "@playwright/test";
+import { test } from "@playwright/test";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { loginViaUi } from "./e2e/helpers";
+import { useSession } from "./e2e/helpers";
 
 const SEED_PATH = process.env.DEMO_SEED_PATH ?? "/tmp/seed-demo.json";
 const SHOTS_DIR = path.resolve(__dirname, "..", "..", "docs", "screenshots");
 
 interface SeedFile {
-  email: string;
-  password: string;
+  sessionId: string;
   tripId: string;
   runId: string;
   lockedSolutionId: string;
@@ -49,18 +49,8 @@ test.describe.serial("hero screenshots", () => {
     }
   });
 
-  test("00 — login page (unauthenticated)", async ({ page }) => {
-    await page.goto("/login");
-    await page.waitForLoadState("networkidle");
-    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-    await page.screenshot({
-      path: path.join(SHOTS_DIR, "00-login.png"),
-      fullPage: true,
-    });
-  });
-
   test("01 — trips dashboard", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
+    await useSession(page, seed.sessionId);
     await page.goto("/trips");
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_500);
@@ -71,7 +61,7 @@ test.describe.serial("hero screenshots", () => {
   });
 
   test("02 — trip overview", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
+    await useSession(page, seed.sessionId);
     await page.goto(`/trips/${seed.tripId}`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_500);
@@ -82,7 +72,7 @@ test.describe.serial("hero screenshots", () => {
   });
 
   test("03 — planning canvas", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
+    await useSession(page, seed.sessionId);
     await page.goto(`/trips/${seed.tripId}/plan`);
     await page.waitForLoadState("networkidle");
     // Give Google Maps a beat to settle markers + camera; harmless if the fallback canvas is up.
@@ -94,7 +84,7 @@ test.describe.serial("hero screenshots", () => {
   });
 
   test("04 — driver view", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
+    await useSession(page, seed.sessionId);
     const driverId = seed.driverIds[0];
     await page.goto(`/trips/${seed.tripId}/driver?as=${driverId}`);
     await page.waitForLoadState("networkidle");
@@ -106,7 +96,7 @@ test.describe.serial("hero screenshots", () => {
   });
 
   test("05 — cost split", async ({ page }) => {
-    await loginViaUi(page, seed.email, seed.password);
+    await useSession(page, seed.sessionId);
     await page.goto(`/trips/${seed.tripId}/cost`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_500);
@@ -122,7 +112,7 @@ test.describe.serial("hero screenshots", () => {
     // candidate. The seeded trip has paretoIndex 0 locked already, and the
     // store's activeRunId is per-session — so we trigger a fresh run here
     // to populate the carousel.
-    await loginViaUi(page, seed.email, seed.password);
+    await useSession(page, seed.sessionId);
     await page.goto(`/trips/${seed.tripId}/plan`);
     await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: /^Plan trip$/i }).click();

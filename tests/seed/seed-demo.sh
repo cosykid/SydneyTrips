@@ -12,7 +12,7 @@
 #   - dotnet run --project src/Trips.Api                       (running on $BASE_URL)
 #
 # Outputs (written to /tmp by default, override with DEMO_OUT_DIR):
-#   /tmp/seed-demo.json   { email, password, tripId, runId, lockedSolutionId, driverIds, passengerIds }
+#   /tmp/seed-demo.json   { sessionId, email, password, tripId, runId, lockedSolutionId, driverIds, passengerIds }
 #
 # Used by:
 #   - web/tests/screenshots.spec.ts            (logs in, navigates each page)
@@ -118,6 +118,13 @@ api_delete() { curl -sf -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X DELETE "$BASE_URL$1
 
 say "prime anonymous session cookie"
 api_get "/healthz" >/dev/null
+# The trips_session cookie is now in the jar (curl marks httpOnly cookies with a
+# #HttpOnly_ prefix on the domain field; awk's whitespace split still puts the name
+# in $6 and the value in $7). Downstream consumers (Playwright screenshots) inject
+# this value so the browser acts as the same anonymous owner that seeded the trip.
+SESSION_ID=$(awk '$6 == "trips_session" { print $7 }' "$COOKIE_JAR" | tail -1)
+[[ -n "$SESSION_ID" ]] || { echo "failed to capture trips_session cookie" >&2; exit 1; }
+note "session: $SESSION_ID"
 # AUTH array used to carry the Bearer header; auth is gone, so we leave it
 # empty for any remaining "${AUTH[@]}" expansions further down.
 AUTH=()
@@ -209,12 +216,14 @@ note "locked solution: $LOCKED"
 # --- write outputs ---------------------------------------------------------
 
 jq -n \
+  --arg session "$SESSION_ID" \
   --arg email "$DEMO_EMAIL" --arg password "$DEMO_PASSWORD" \
   --arg base "$BASE_URL" --arg trip "$TRIP_ID" --arg run "$RUN_ID" --arg lockid "$LOCKED" \
   --argjson drivers "$(printf '%s\n' "${DRIVER_IDS[@]}" | jq -R . | jq -s .)" \
   --argjson passengers "$(printf '%s\n' "${PASSENGER_IDS[@]}" | jq -R . | jq -s .)" \
   '{
     baseUrl: $base,
+    sessionId: $session,
     email: $email,
     password: $password,
     tripId: $trip,

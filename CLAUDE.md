@@ -65,7 +65,7 @@ docker compose -f infra/docker-compose.yml down
 # graph build first (see docs/operations-cost.md "Running OSRM"). Then set Integrations:Osrm:BaseUrl.
 docker compose -f infra/docker-compose.yml --profile routing up -d
 
-# deterministic demo trip (registers a user, creates trip, 3 drivers + 8 passengers,
+# deterministic demo trip (opens an anonymous session, creates trip, 3 drivers + 8 passengers,
 # optimises with the heuristic, locks the balanced Pareto solution)
 ./tests/seed/seed-demo.sh
 
@@ -127,7 +127,7 @@ Diagnosing against Postgres (host port 5433): `candidate_nodes` columns are Pasc
 
 ### Realtime (Trips.Realtime)
 
-- `TripHub` is the SignalR hub. Drivers push positions, passengers receive ETAs. JWT auth flows via the `access_token` query string (handled in `Program.cs:JwtBearerEvents.OnMessageReceived`) because WebSocket upgrades can't carry the `Authorization` header.
+- `TripHub` is the SignalR hub. Drivers push positions, passengers receive ETAs. There's no JWT: the hub recognises the caller via the `trips_session` cookie. The web client connects through the same Next.js proxy (`/api/proxy/hubs/trip`) using the `LongPolling` transport — Next route handlers can't tunnel WebSocket upgrades, and the cookie rides every long-poll round-trip natively. Hub authorisation goes through `ITripHubAuthorizer`.
 - Redis is the SignalR backplane in production. Tests clear the `ConnectionStrings__Redis` env var (see `TripsApiFactory`'s static ctor) so the realtime layer falls back to the in-memory backplane.
 - `EtaRecomputeService` walks `run history → locked solution → driver route` whenever a position update arrives, then broadcasts.
 
@@ -136,7 +136,7 @@ Diagnosing against Postgres (host port 5433): `candidate_nodes` columns are Pasc
 `tests/Trips.Api.Tests/TripsApiFactory.cs` is the shared fixture (xUnit `ApiTests` collection — tests serialise). It:
 
 - Spins up Postgres+PostGIS via Testcontainers (one container per fixture instance, ~10s startup).
-- Applies migrations on `InitializeAsync`; `ResetAsync` TRUNCATEs domain + identity tables between tests.
+- Applies migrations on `InitializeAsync`; `ResetAsync` TRUNCATEs the domain tables (`RESTART IDENTITY CASCADE`) between tests. (Identity/AspNet* tables are gone — auth is the anonymous `trips_session` cookie.)
 - Replaces `ISolver` with `StubSolver` and the three HTTP clients with their `Stub*` siblings so tests don't hang on external retries.
 - Exposes `WithRealSolver()` → sibling `WebApplicationFactory<Program>` that re-registers the real `OrToolsSolver` while keeping the HTTP stubs. Use this for end-to-end runner/solver coverage. See `RealSolverOptimisationTests` for the pattern.
 

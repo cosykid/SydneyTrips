@@ -6,8 +6,7 @@ Source images for the top-level `README.md` and the architecture notes.
 
 | File | Type | What it shows |
 | ---- | ---- | ------------- |
-| `00-login.png`            | real | Sign-in page (unauthenticated). |
-| `01-trips-dashboard.png`  | real | Trips dashboard after logging in as the seeded `demo@sydneytrips.dev` user, with the seeded "Group trip to Palm Beach" card visible. |
+| `01-trips-dashboard.png`  | real | Trips dashboard (the entry point — no login), with the seeded "Group trip to Palm Beach" card visible. |
 | `02-trip-overview.png`    | real | Trip overview — locked-solution badge, calendar-hold buttons per participant, and the full participant list rendered from the eager-loaded `participants[]` on `GET /trips/{id}`. |
 | `03-planning-canvas.png`  | real | Planner — weight sliders for the five objective terms, optimise button, participant + candidate-node markers on the map, trip name chip. |
 | `04-driver-view.png`      | real | Driver manifest — ordered pickup stops with ETAs, Google/Apple Maps deep links, live SignalR connection badge, route polyline through the picks to the destination. |
@@ -27,7 +26,7 @@ dotnet ef database update --project src/Trips.Data --startup-project src/Trips.A
 dotnet run --project src/Trips.Api
 
 # 3. Run the Next.js dev server in another terminal — make sure web/.env.local
-#    has at least AUTH_SECRET=<32+ chars> and API_BASE_URL=http://localhost:5000.
+#    has at least API_BASE_URL=http://localhost:5000 (and NEXT_PUBLIC_API_BASE_URL).
 #    Optionally set NEXT_PUBLIC_GOOGLE_MAPS_KEY for a full Google Maps basemap.
 cd web && npm run dev
 
@@ -38,7 +37,7 @@ cd web && npm run dev
 cd web && npx playwright test tests/screenshots.spec.ts --headed
 ```
 
-The spec reads `/tmp/seed-demo.json`, logs in, navigates to each page, and writes the PNGs back into this folder. Step 5 produces `00-login.png` through `06-whatif-diff.png`.
+The spec reads `/tmp/seed-demo.json`, loads the seeded `trips_session` cookie into the browser, navigates to each page, and writes the PNGs back into this folder. Step 5 produces `01-trips-dashboard.png` through `06-whatif-diff.png`.
 
 ## Google Maps key
 
@@ -48,11 +47,11 @@ If `NEXT_PUBLIC_GOOGLE_MAPS_KEY` is unset in `web/.env.local`, the map component
 echo "NEXT_PUBLIC_GOOGLE_MAPS_KEY=<your-browser-maps-key>" >> web/.env.local
 ```
 
-## Why these seven
+## Why these six
 
 These are the screenshots referenced from the top-level README:
 
-- **Login + dashboard** are the entry points.
+- **Dashboard** is the entry point (no login step).
 - **Trip overview** is the home page for one trip — participants, calendar holds, lock status.
 - **Planning + Pareto** is the interactive heart of the product.
 - **Driver view** is the moment-of-truth output — what someone actually uses on the road.

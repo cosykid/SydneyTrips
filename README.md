@@ -69,7 +69,7 @@ flowchart LR
   next -- "REST + SignalR" --> api
 ```
 
-**Backend** is a .NET 10 minimal-API solution split into six projects: `Trips.Core` (DTOs + abstractions, the only leaf), `Trips.Data` (EF Core + PostGIS via NetTopologySuite), `Trips.Optimisation` (the two solvers + the bench harness + cost-split + return-leg + what-if), `Trips.Integrations` (TfNSW + Google Routes + geocoding clients), `Trips.Realtime` (SignalR hubs + GTFS-RT worker + an ETA recompute service), and `Trips.Api` (composition root, JWT auth, ~20 endpoints). Full dependency graph in [`docs/architecture.md`](docs/architecture.md).
+**Backend** is a .NET 10 minimal-API solution split into six projects: `Trips.Core` (DTOs + abstractions, the only leaf), `Trips.Data` (EF Core + PostGIS via NetTopologySuite), `Trips.Optimisation` (the two solvers + the bench harness + cost-split + return-leg + what-if), `Trips.Integrations` (TfNSW + Google Routes + geocoding clients), `Trips.Realtime` (SignalR hubs + GTFS-RT worker + an ETA recompute service), and `Trips.Api` (composition root, anonymous-session-cookie auth, ~20 endpoints). Full dependency graph in [`docs/architecture.md`](docs/architecture.md).
 
 **Frontend** is Next.js 16 (App Router) with the entire UI rendered via React Server Components where possible, Google Maps (`@vis.gl/react-google-maps`) for the map, TanStack Query for server state, and `@microsoft/signalr` for the live driver/passenger views.
 
@@ -142,9 +142,9 @@ See [`bench/README.md`](bench/README.md) for the CLI flags and what knobs do wha
 
 Every screenshot below is captured by `web/tests/screenshots.spec.ts` against a backend seeded by `tests/seed/seed-demo.sh`.
 
-### Login + dashboard
+### Dashboard
 
-![Login page](docs/screenshots/00-login.png)
+There's no sign-in step: the API stamps an anonymous `trips_session` cookie on the first request, and that cookie owns whatever trips the browser creates. The dashboard is the entry point.
 
 ![Trips dashboard with the seeded "Group trip to Palm Beach"](docs/screenshots/01-trips-dashboard.png)
 
@@ -186,7 +186,7 @@ The what-if mode re-solves with two passengers dropped, warm-starting from the l
 - Redis 7 — `Microsoft.AspNetCore.SignalR.StackExchangeRedis` backplane + route-matrix cache
 - Google.OrTools 9.15 (CP-SAT)
 - FluentValidation 11, Serilog 10, Swashbuckle 10
-- ASP.NET Identity over the same DbContext, JWT bearer for API auth
+- Anonymous-session-cookie auth — a long-lived `trips_session` GUID cookie owns each browser's trips (no login, no Identity, no JWT)
 - Ical.Net 5 for the `calendar.ics` per-participant export
 
 **Frontend** (`web/`)
@@ -273,7 +273,7 @@ Equivalent env-var form (double-underscore separates config sections): `Integrat
 cd web && npx playwright test tests/screenshots.spec.ts --headed
 ```
 
-The seed script registers a demo user, creates a trip, adds 3 drivers + 8 passengers spread across Sydney, optimises, and locks the balanced Pareto solution. The Playwright spec then logs in and captures the five hero screenshots into `docs/screenshots/`. See [`docs/screenshots/README.md`](docs/screenshots/README.md) for the full flow.
+The seed script opens an anonymous session, creates a trip, adds 3 drivers + 8 passengers spread across Sydney, optimises, and locks the balanced Pareto solution — writing the session cookie into `/tmp/seed-demo.json`. The Playwright spec reuses that cookie and captures the hero screenshots into `docs/screenshots/`. See [`docs/screenshots/README.md`](docs/screenshots/README.md) for the full flow.
 
 ## Project layout
 
@@ -284,7 +284,7 @@ src/
   Trips.Optimisation   OR-Tools + heuristic solvers + cost split + return trip + what-if
   Trips.Integrations   TfNSW + Google Routes + geocoding clients (+ Redis caching)
   Trips.Realtime       SignalR TripHub + GTFS-RT worker + ETA recompute
-  Trips.Api            ASP.NET Core minimal API + JWT auth + background OptimisationRunner
+  Trips.Api            ASP.NET Core minimal API + anonymous-session auth + background OptimisationRunner
 tests/
   Trips.*.Tests        xUnit per src library
   Mocks                shared fixtures + WireMock-style stubs
@@ -314,7 +314,7 @@ Project references follow the arrows above: `Trips.Api` depends on everything el
 | WS1 | Foundation: solution scaffold, EF Core + PostGIS, docker-compose, CI | done |
 | WS2 | TfNSW + Google Routes + Geocoding clients (with Redis caching) | done |
 | WS3 | OR-Tools + heuristic solvers + benchmark harness | done |
-| WS4 | REST API surface + JWT auth + background optimisation runner | done |
+| WS4 | REST API surface + session-cookie auth + background optimisation runner | done |
 | WS5 | SignalR TripHub + ETA recompute + GTFS-RT worker | done |
 | WS6 | Next.js frontend — planner, live driver/passenger views, cost UI, what-if modal | done |
 | WS7 | Cost split, return trip, what-if warm-start, calendar.ics | done |

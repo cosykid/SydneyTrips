@@ -13,7 +13,7 @@
 // Skipped automatically unless the .NET API is reachable on $API_BASE_URL.
 
 import { test, expect } from "@playwright/test";
-import { seed, loginViaUi } from "./helpers";
+import { seed, useSession } from "./helpers";
 
 test.describe("trip-detail eager-loading", () => {
   test.skip(process.env.API_BASE_URL_UNREACHABLE === "1", "API unreachable");
@@ -21,7 +21,7 @@ test.describe("trip-detail eager-loading", () => {
   test("planner renders participants from real trip data", async ({ page }) => {
     const data = await seed({ testTag: "participants", scenario: "single" });
 
-    await loginViaUi(page, data.email, data.password);
+    await useSession(page, data.sessionId);
 
     // Trip overview should list all the seeded participants (1 driver + 3 passengers).
     await page.goto(`/trips/${data.tripId}`);

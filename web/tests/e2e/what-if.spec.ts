@@ -6,7 +6,7 @@
 // flow exercises the modal UI separately.
 
 import { test, expect, request as playwrightRequest } from "@playwright/test";
-import { seed, loginViaUi } from "./helpers";
+import { seed, useSession } from "./helpers";
 
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:5000";
 
@@ -16,15 +16,17 @@ test.describe("what-if scenario", () => {
   test("dropping two passengers returns a coherent diff", async ({ page }) => {
     const data = await seed({ testTag: "whatif", scenario: "multi" });
 
-    await loginViaUi(page, data.email, data.password);
+    await useSession(page, data.sessionId);
 
-    // Call what-if via the API directly — drop 2 passengers and keep the same weights.
-    const api = await playwrightRequest.newContext({ baseURL: API_BASE_URL });
-    const headers = { Authorization: `Bearer ${data.token}` };
+    // Call what-if via the API directly — drop 2 passengers and keep the same weights. Carry the
+    // seeded session cookie so the API treats this context as the trip's owner.
+    const api = await playwrightRequest.newContext({
+      baseURL: API_BASE_URL,
+      extraHTTPHeaders: { Cookie: `trips_session=${data.sessionId}` },
+    });
     const dropped = data.passengerIds.slice(0, 2);
 
     const whatIfRes = await api.post(`/trips/${data.tripId}/whatif`, {
-      headers,
       data: {
         droppedParticipantIds: dropped,
         newWeights: {

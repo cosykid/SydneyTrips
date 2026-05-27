@@ -23,7 +23,7 @@ flowchart LR
     opt[Trips.Optimisation\nOR-Tools CP-SAT + heuristic + bench]
     integ[Trips.Integrations\nTfNSW / Google / geocoding clients]
     rt[Trips.Realtime\nSignalR hubs + GTFS-RT worker + ETA recompute]
-    api[Trips.Api\nASP.NET Core minimal API\nendpoints + JWT auth + DI]
+    api[Trips.Api\nASP.NET Core minimal API\nendpoints + session-cookie auth + DI]
 
     data --> core
     opt --> core
@@ -70,9 +70,9 @@ Two things worth calling out:
 
 ## Frontend → API path
 
-Browsers never see the JWT directly. Every authenticated REST call hits `/api/proxy/*` (a route handler in `web/src/app/api/proxy/[...path]/route.ts`) which reads the httpOnly session cookie server-side and forwards the bearer token to `Trips.Api`.
+There's no token to manage. Every REST call hits `/api/proxy/*` (a route handler in `web/src/app/api/proxy/[...path]/route.ts`) which forwards the browser's cookies — including the httpOnly `trips_session` cookie the API mints on first contact — straight to `Trips.Api`, and mirrors any `Set-Cookie` back. The API owns the cookie and decides what it grants; there's no auth gate in the proxy.
 
-SignalR is the exception. The browser asks `/api/realtime/token` for a short-lived JWT, then dials `Trips.Realtime`'s hub at `ws://api/hubs/trip` directly over WebSockets. SignalR can't set `Authorization` on the upgrade handshake, so the token rides as `?access_token=...` — `Program.cs` pulls it through on `OnMessageReceived` when the path starts with `/hubs`.
+SignalR rides the same proxy: the client dials `/api/proxy/hubs/trip` over the `LongPolling` transport (Next route handlers can't tunnel WebSocket upgrades). The `trips_session` cookie flows on negotiate and every long-poll round-trip, so the hub recognises the caller exactly like a REST call — no token fetch, no `access_token` query string.
 
 ## Lifecycle: "create a trip → see the driver moving"
 
@@ -88,7 +88,7 @@ sequenceDiagram
     participant GR as Google Routes
 
     U->>N: POST /trips  (name, destination, depart_at)
-    N->>API: forward with bearer JWT
+    N->>API: forward with trips_session cookie
     API->>DB: INSERT trip + TripCreated event
     API-->>U: 201 + trip DTO
 
@@ -111,7 +111,7 @@ sequenceDiagram
     API->>DB: write locked solution, fan-out events
 
     Note over U,RT: Driver/passenger views open
-    U->>RT: WebSocket /hubs/trip + JWT
+    U->>RT: connect /api/proxy/hubs/trip (LongPolling + trips_session cookie)
     RT-->>U: ack subscription
 
     loop driver position

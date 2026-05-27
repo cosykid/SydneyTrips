@@ -5,7 +5,7 @@
 // keeps `npm run test:e2e` runnable against just the Next.js webServer when the backend isn't up,
 // even though the assertions in this file require both.
 import { test, expect } from "@playwright/test";
-import { seed, loginViaUi } from "./helpers";
+import { seed, useSession } from "./helpers";
 
 test.describe("single-driver scenario", () => {
   // The full-stack specs require a live Trips.Api. Run with API_BASE_URL_UNREACHABLE=1 to skip.
@@ -14,7 +14,7 @@ test.describe("single-driver scenario", () => {
   test("optimises and locks a one-driver route", async ({ page }) => {
     const data = await seed({ testTag: "single", scenario: "single" });
 
-    await loginViaUi(page, data.email, data.password);
+    await useSession(page, data.sessionId);
     await page.goto(`/trips/${data.tripId}`);
 
     // Sanity: trip overview shows the right participant count.

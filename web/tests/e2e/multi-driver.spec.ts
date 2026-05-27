@@ -4,7 +4,7 @@
 // Like single-driver.spec.ts, this requires a live Trips.Api.
 
 import { test, expect } from "@playwright/test";
-import { seed, loginViaUi } from "./helpers";
+import { seed, useSession } from "./helpers";
 
 test.describe("multi-driver scenario", () => {
   test.skip(process.env.API_BASE_URL_UNREACHABLE === "1", "API unreachable");
@@ -12,7 +12,7 @@ test.describe("multi-driver scenario", () => {
   test("renders three driver routes with passenger assignments", async ({ page }) => {
     const data = await seed({ testTag: "multi", scenario: "multi" });
 
-    await loginViaUi(page, data.email, data.password);
+    await useSession(page, data.sessionId);
     await page.goto(`/trips/${data.tripId}/plan`);
     await page.waitForLoadState("networkidle");
 
