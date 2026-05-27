@@ -222,6 +222,9 @@ cd SydneyTrips
 # 2. Bring up Postgres + Redis
 #    Postgres is exposed on host port 5433 to dodge a clash with native installs on 5432.
 docker compose -f infra/docker-compose.yml up -d
+#    Optional: add OSRM so the travel-time matrix is served locally (zero Google Route Matrix
+#    spend). Needs a one-time graph build — see docs/operations-cost.md "Running OSRM".
+#    docker compose -f infra/docker-compose.yml --profile routing up -d
 
 # 3. Install the EF Core CLI (once per machine)
 dotnet tool install --global dotnet-ef --version 10.0.4
@@ -260,7 +263,7 @@ Equivalent env-var form (double-underscore separates config sections): `Integrat
 | --- | --- |
 | `Integrations:TfNsw:ApiKey`  | Register at <https://opendata.transport.nsw.gov.au>, subscribe to Trip Planner v2, Coordinate Request, Departure, GTFS-Realtime. |
 | `Integrations:Google:ApiKey` | Backend (server-side) key. Needs **Routes API** enabled (and **Geocoding API** only if `Integrations:Geocoding:Provider=google`; the default is Nominatim, which needs no key). The Route Matrix is billed **per element** (origins × destinations) and is the dominant cost — see [`docs/operations-cost.md`](docs/operations-cost.md) for the full cost model and the complete API/key breakdown: planning runs on free-flow durations, cached per-pair, and (with OSRM below) off Google entirely; plus the budget alert + quota cap to set **before** wiring a key. |
-| `Integrations:Osrm:BaseUrl` | Optional. Point at a self-hosted OSRM (e.g. `http://localhost:5001`) to serve the **planning** travel-time matrix locally at zero marginal cost instead of Google's per-element Route Matrix; Google is then used only for live ETAs + the locked-solution polyline. Empty = disabled (Google handles everything). Setup in [`docs/operations-cost.md`](docs/operations-cost.md). |
+| `Integrations:Osrm:BaseUrl` | Optional. Point at a self-hosted OSRM (e.g. `http://localhost:5001`) to serve **every** travel-time matrix — planning **and** live ETA — locally at zero marginal cost instead of Google's per-element Route Matrix; Google is then used only for the locked-solution polyline. (Trade-off: live ETAs become free-flow estimates, since OSRM has no live traffic.) Empty = disabled (Google handles everything). Setup in [`docs/operations-cost.md`](docs/operations-cost.md). |
 | `NEXT_PUBLIC_GOOGLE_MAPS_KEY` | Browser-side key in `web/.env.local`, **separate** from the backend key above (restrict it by HTTP referrer). The frontend needs **Maps JavaScript API** (the maps), **Places API (New)** (address autocomplete), and **Routes API** (client-side road-snapped polylines). Optional to run — without it, maps fall back to the SVG `MapFallback` and address fields become plain text inputs. Vector maps use `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` (defaults to `DEMO_MAP_ID`). |
 
 ### Demo seed + screenshots
@@ -292,7 +295,7 @@ bench/
   REPORT.md            benchmark report — see Benchmark results above
   results.csv          raw bench rows
 infra/
-  docker-compose.yml   Postgres + PostGIS + Redis
+  docker-compose.yml   Postgres + PostGIS + Redis (+ optional OSRM via the "routing" profile)
 docs/
   architecture.md      mermaid dependency graph + lifecycle sequence diagram
   screenshots/         hero PNGs + README for regenerating them

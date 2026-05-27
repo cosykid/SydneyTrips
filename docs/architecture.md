@@ -41,7 +41,7 @@ flowchart LR
   subgraph infra[Infrastructure]
     pg[(PostgreSQL 16\n+ PostGIS 3)]
     redis[(Redis 7\nroute cache + SignalR backplane)]
-    osrm[OSRM\nself-hosted planning matrix]
+    osrm[OSRM\nself-hosted travel-time matrix\nplanning + live ETA]
   end
 
   subgraph frontend[Frontend]
@@ -52,7 +52,7 @@ flowchart LR
   integ --> tfnsw
   integ --> google
   integ --> geocoder
-  integ -- "free-flow planning matrix" --> osrm
+  integ -- "all travel-time matrices" --> osrm
 
   api --> pg
   api --> redis
@@ -134,6 +134,6 @@ A few design calls that the diagram does not show:
 - **Optimisation runs are out-of-band.** The HTTP request returns a `runId` immediately; a background `OptimisationRunner` does the actual solve. The frontend polls `GET /runs/{runId}` for completion and pulls the Pareto set when ready. This keeps API response times bounded regardless of instance size.
 - **Cost split + return-trip + what-if all live in `Trips.Optimisation`.** They reuse the same `ObjectiveEvaluator` as the main solver so the numbers are directly comparable. What-if uses CP-SAT `AddHint` warm-starting from the locked solution.
 - **SignalR over Redis backplane.** The hub backplane means we can run multiple `Trips.Api` replicas behind a load balancer and a passenger connection landing on replica B will still receive driver-position updates that arrived at replica A.
-- **Google Route Matrix cost is engineered down, not just alerted on.** The matrix is billed per element (origins × destinations) and is the project's dominant external cost. The layering, from cheapest to fallback: (1) **OSRM serves the planning matrix.** When `Integrations:Osrm:BaseUrl` is set, `HybridRoutesClient` routes free-flow (planning) matrices to a self-hosted OSRM `/table` — the whole grid in one local call at zero marginal cost — and keeps Google only for traffic-aware ETAs and the locked-solution polyline. (2) The planner requests **free-flow** durations (`trafficAware: false`) regardless of provider — it solves against a *future* departure, so a live-traffic snapshot at plan time is noise (and on Google, free-flow is the cheaper "Essentials" SKU). (3) `CachingGoogleRoutesClient` caches **per origin→destination pair** (coordinates snapped to ~11 m), so shared legs and incremental re-plans only ever bill genuinely new pairs. The cache reads `Integrations:Cache:RedisConnectionString` and now falls back to `ConnectionStrings:Redis` — without that fallback it had silently been a no-op (every run paid full freight). Operational guardrails (budget alert + a hard quota cap) live in [`operations-cost.md`](operations-cost.md).
+- **Google Route Matrix cost is engineered down, not just alerted on.** The matrix is billed per element (origins × destinations) and is the project's dominant external cost. The layering, from cheapest to fallback: (1) **OSRM serves every travel-time matrix.** When `Integrations:Osrm:BaseUrl` is set, `HybridRoutesClient` routes both the planning matrix **and** the live-ETA matrix to a self-hosted OSRM `/table` — the whole grid in one local call at zero marginal cost — so Google's per-element Route Matrix is **never called**; Google keeps only the locked-solution polyline (`ComputeRoutes`). The trade is that live ETAs become free-flow estimates (OSRM has no live traffic) — a deliberate choice to take the dominant cost to zero. (2) The planner requests **free-flow** durations (`trafficAware: false`) regardless of provider — it solves against a *future* departure, so a live-traffic snapshot at plan time is noise (and on a Google-only deployment, free-flow is the cheaper "Essentials" SKU). (3) `CachingGoogleRoutesClient` caches **per origin→destination pair** (coordinates snapped to ~11 m), so shared legs and incremental re-plans only ever bill genuinely new pairs. The cache reads `Integrations:Cache:RedisConnectionString` and now falls back to `ConnectionStrings:Redis` — without that fallback it had silently been a no-op (every run paid full freight). Operational guardrails (budget alert + a hard quota cap) live in [`operations-cost.md`](operations-cost.md).
 
 For the deeper "why these terms in the objective" story see [`bench/REPORT.md`](../bench/REPORT.md) and the README's _The problem_ section.

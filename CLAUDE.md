@@ -60,6 +60,11 @@ When backend contracts change (DTOs / endpoints), regenerate `src/Trips.Api/open
 docker compose -f infra/docker-compose.yml up -d
 docker compose -f infra/docker-compose.yml down
 
+# Optional OSRM (host port 5001) — serves EVERY travel-time matrix (planning + live ETA) locally,
+# so Google's Route Matrix is never called. Gated behind the "routing" profile; needs a one-time
+# graph build first (see docs/operations-cost.md "Running OSRM"). Then set Integrations:Osrm:BaseUrl.
+docker compose -f infra/docker-compose.yml --profile routing up -d
+
 # deterministic demo trip (registers a user, creates trip, 3 drivers + 8 passengers,
 # optimises with the heuristic, locks the balanced Pareto solution)
 ./tests/seed/seed-demo.sh
@@ -67,6 +72,14 @@ docker compose -f infra/docker-compose.yml down
 # curl-driven end-to-end smoke test against a running API
 BASE_URL=http://localhost:5000 bash tests/smoke/ws7.sh
 ```
+
+**Apple Silicon (arm64):** the `postgis/postgis` and `ghcr.io/project-osrm/osrm-backend` images are
+**amd64-only**, so Docker Desktop runs them under emulation and shows an orange "AMD64" badge — this
+is expected, not a problem (`redis` is native arm64, no badge). The OSRM compose service pins
+`platform: linux/amd64` for this reason, and the one-time graph-build commands need
+`--platform linux/amd64` too (see `docs/operations-cost.md`). macOS also squats on port 5000 via
+AirPlay Receiver — disable it, or run the API with `--urls http://localhost:5050` (and point
+`web/.env.local`'s `API_BASE_URL`/`NEXT_PUBLIC_API_BASE_URL` at 5050).
 
 ## Architecture
 

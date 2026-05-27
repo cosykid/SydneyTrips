@@ -46,7 +46,9 @@ assuming a given volume is free — the allotment depends on your monthly call c
    share legs now reuse cached pairs instead of re-billing them.
 2. **Planning uses free-flow durations.** `OptimisationRunner` calls the matrix with
    `trafficAware: false`. The planner solves against a *future* `DepartAt`, so a live-traffic snapshot
-   taken at plan time is noise. Only `EtaService` (the live ETA path) passes `trafficAware: true`.
+   taken at plan time is noise. Only `EtaService` (the live ETA path) passes `trafficAware: true` —
+   though when OSRM is wired even that is served free-flow by OSRM (see item 4), so the flag only
+   changes the destination/SKU on a Google-only deployment.
 3. **Per-pair caching.** The matrix is cached one origin→destination pair at a time, keyed on
    coordinates snapped to `MatrixSnapDecimals` (4 dp ≈ 11 m) plus the traffic flag. Two trips sharing
    a leg bill it once; a re-plan that adds one node bills only that node's new row + column, not the
