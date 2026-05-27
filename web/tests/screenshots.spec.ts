@@ -7,9 +7,9 @@
 //
 // Outputs land in docs/screenshots/*.png — paths are relative to the repo root.
 //
-// The Mapbox token is read from NEXT_PUBLIC_MAPBOX_TOKEN. If unset, the map components fall
-// back to a placeholder card explaining the missing token — the screenshots still render
-// cleanly enough for the README; we just lose the basemap.
+// The Google Maps key is read from NEXT_PUBLIC_GOOGLE_MAPS_KEY. If unset, the map components
+// fall back to a deterministic SVG canvas (MapFallback) drawn from real coordinates — the
+// screenshots still render cleanly enough for the README; we just lose the basemap.
 
 import { test, expect } from "@playwright/test";
 import { promises as fs } from "node:fs";
@@ -85,7 +85,7 @@ test.describe.serial("hero screenshots", () => {
     await loginViaUi(page, seed.email, seed.password);
     await page.goto(`/trips/${seed.tripId}/plan`);
     await page.waitForLoadState("networkidle");
-    // Give Mapbox a beat to settle markers + camera; harmless if the placeholder card is up.
+    // Give Google Maps a beat to settle markers + camera; harmless if the fallback canvas is up.
     await page.waitForTimeout(2_500);
     await page.screenshot({
       path: path.join(SHOTS_DIR, "03-planning-canvas.png"),

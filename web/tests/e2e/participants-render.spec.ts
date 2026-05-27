@@ -47,7 +47,7 @@ test.describe("trip-detail eager-loading", () => {
       page.getByText(/4 participants .* candidate nodes/i),
     ).toBeVisible({ timeout: 15_000 });
 
-    // The map fallback canvas (used when no Mapbox token is configured) renders
+    // The map fallback canvas (used when no Google Maps key is configured) renders
     // a labelled origin for every participant. We assert the driver label is
     // visible — if participants[] were empty, it wouldn't be.
     const fallback = page.getByTestId("map-fallback");

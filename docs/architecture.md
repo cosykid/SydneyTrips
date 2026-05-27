@@ -46,7 +46,7 @@ flowchart LR
 
   subgraph frontend[Frontend]
     next[Next.js 16 web/\nApp Router + RSC]
-    map[Mapbox GL JS]
+    map[Google Maps]
   end
 
   integ --> tfnsw

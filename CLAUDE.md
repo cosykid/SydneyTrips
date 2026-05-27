@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # build everything
 dotnet build Trips.sln -c Debug
 
-# run all backend tests (125 across six projects)
+# run all backend tests (156 across six projects)
 dotnet test Trips.sln -c Debug
 
 # run a single test project

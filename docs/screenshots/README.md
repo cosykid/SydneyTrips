@@ -14,7 +14,7 @@ Source images for the top-level `README.md` and the architecture notes.
 | `05-cost-split.png`       | real | Cost-split breakdown — one card per participant with fuel + tolls + total, plus the `driver pays nothing` callout when applicable. |
 | `06-whatif-diff.svg`      | mockup | What-if dialog: scenario inputs on the left, diff on the right. Capture spec lives in `web/tests/screenshots.spec.ts`; needs a planner session with the locked solution selected in the carousel (see [Regenerating](#regenerating-the-screenshots)). |
 
-All real PNGs are produced by `web/tests/screenshots.spec.ts` against a backend seeded by `tests/seed/seed-demo.sh`. The map area in the planner / driver screenshots is rendered by a token-free SVG fallback canvas (`web/src/components/map/MapFallback.tsx`) when `NEXT_PUBLIC_MAPBOX_TOKEN` is unset — the origins, candidate nodes, destination star, and locked route are still drawn from real backend coordinates, just without the Mapbox basemap.
+All real PNGs are produced by `web/tests/screenshots.spec.ts` against a backend seeded by `tests/seed/seed-demo.sh`. The map area in the planner / driver screenshots is rendered by a key-free SVG fallback canvas (`web/src/components/map/MapFallback.tsx`) when `NEXT_PUBLIC_GOOGLE_MAPS_KEY` is unset — the origins, candidate nodes, destination star, and locked route are still drawn from real backend coordinates, just without the Google Maps basemap.
 
 ## Regenerating the screenshots
 
@@ -28,7 +28,7 @@ dotnet run --project src/Trips.Api
 
 # 3. Run the Next.js dev server in another terminal — make sure web/.env.local
 #    has at least AUTH_SECRET=<32+ chars> and API_BASE_URL=http://localhost:5000.
-#    Optionally set NEXT_PUBLIC_MAPBOX_TOKEN for a full Mapbox basemap.
+#    Optionally set NEXT_PUBLIC_GOOGLE_MAPS_KEY for a full Google Maps basemap.
 cd web && npm run dev
 
 # 4. Seed the deterministic demo trip
@@ -40,12 +40,12 @@ cd web && npx playwright test tests/screenshots.spec.ts --headed
 
 The spec reads `/tmp/seed-demo.json`, logs in, navigates to each page, and writes the PNGs back into this folder. Step 5 produces `00-login.png` through `06-whatif-diff.png`.
 
-## Mapbox token
+## Google Maps key
 
-If `NEXT_PUBLIC_MAPBOX_TOKEN` is unset in `web/.env.local`, the map components fall back to a deterministic SVG canvas that still positions every origin / pickup / destination / route based on the trip's actual lat/lng data. It's not a basemap — there's no Sydney coastline behind the dots — but it's real product UI built from real data. Set the token to get full-fidelity captures:
+If `NEXT_PUBLIC_GOOGLE_MAPS_KEY` is unset in `web/.env.local`, the map components fall back to a deterministic SVG canvas that still positions every origin / pickup / destination / route based on the trip's actual lat/lng data. It's not a basemap — there's no Sydney coastline behind the dots — but it's real product UI built from real data. Set the key to get full-fidelity captures:
 
 ```bash
-echo "NEXT_PUBLIC_MAPBOX_TOKEN=pk.<your-public-mapbox-token>" >> web/.env.local
+echo "NEXT_PUBLIC_GOOGLE_MAPS_KEY=<your-browser-maps-key>" >> web/.env.local
 ```
 
 ## Why these seven

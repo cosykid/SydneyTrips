@@ -10,7 +10,7 @@ Phase C.
 - TypeScript strict mode
 - Tailwind v4 + shadcn/ui (neutral base, CSS variables)
 - TanStack Query for server cache, Zustand for UI state
-- Mapbox GL JS via `react-map-gl`
+- Google Maps via `@vis.gl/react-google-maps`
 - Zod + react-hook-form for form validation
 - Vitest + Testing Library + Playwright
 
@@ -18,7 +18,7 @@ Phase C.
 
 ```bash
 cp .env.example .env.local
-# fill NEXT_PUBLIC_MAPBOX_TOKEN, AUTH_SECRET, API_BASE_URL
+# fill AUTH_SECRET and API_BASE_URL (and NEXT_PUBLIC_GOOGLE_MAPS_KEY for a real basemap)
 npm install
 npm run dev
 ```
@@ -31,7 +31,7 @@ The dev server listens on `http://localhost:3000`.
 | ------------------------- | -------- | --------------------------------------------------------------------- |
 | `NEXT_PUBLIC_API_BASE_URL`| yes      | Public URL of the Trips API (used by client-side preview helpers).    |
 | `API_BASE_URL`            | no       | Server-side override for the proxy. Defaults to `NEXT_PUBLIC_API_BASE_URL`. |
-| `NEXT_PUBLIC_MAPBOX_TOKEN`| yes      | Public Mapbox token. The map degrades to a notice when missing.       |
+| `NEXT_PUBLIC_GOOGLE_MAPS_KEY`| no    | Browser-side Google Maps key. The map degrades to the SVG fallback canvas when missing. |
 | `AUTH_SECRET`             | yes      | 32+ char random string used to sign session cookies (`openssl rand -base64 32`). |
 | `SESSION_COOKIE_NAME`     | no       | Defaults to `trips_session`.                                          |
 
@@ -66,17 +66,18 @@ Replace `schema.ts` with the codegen output from `npm run gen:api` once
 
 ## Map layers
 
-`src/components/plan/PlanMap.tsx` renders five distinct GeoJSON sources:
+`src/components/plan/PlanMap.tsx` renders these overlay groups via `@vis.gl/react-google-maps`:
 
-| Source            | Layer type | Style                                                        |
-| ----------------- | ---------- | ------------------------------------------------------------ |
-| `candidate-nodes` | circle     | small grey dot, light stroke — all candidate PT pickup nodes.|
-| `driver-routes`   | line       | per-driver categorical colour (Okabe-Ito palette).           |
-| `chosen-nodes`    | circle     | green circle with dark green stroke — picked pickups.        |
-| `origins`         | circle     | red dot, larger radius for drivers.                          |
-| `destination`     | symbol     | star glyph, yellow halo.                                     |
+| Overlay           | Type     | Style                                                                          |
+| ----------------- | -------- | ------------------------------------------------------------------------------ |
+| candidate nodes   | marker   | small grey dot — every candidate PT pickup node.                               |
+| driver routes     | polyline | road-snapped per-driver line (Okabe-Ito palette), white casing, fanned apart where routes share roads. |
+| passenger legs    | polyline | dashed home→pickup legs coloured by TfNSW mode (walk = slate), with a minute/mode chip at the midpoint. |
+| pickup stops      | marker   | green pin (`#34A853`), plus a TfNSW mode chip for transit hubs.                |
+| origins           | marker   | name-labelled dot coloured to match the driver they ride with; drivers larger.|
+| destination       | pin      | red Google pin anchored at the tip.                                            |
 
-The map degrades to an inline notice when `NEXT_PUBLIC_MAPBOX_TOKEN` is unset.
+The map degrades to the SVG `MapFallback` canvas — drawn from the same real coordinates — when `NEXT_PUBLIC_GOOGLE_MAPS_KEY` is unset.
 
 ## Pages
 

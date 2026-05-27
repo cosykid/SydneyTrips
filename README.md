@@ -6,7 +6,7 @@ The interesting bit isn't the routing — it's that every passenger has a *set* 
 
 ![Planning canvas — Pareto carousel + weight sliders + Sydney basemap](docs/screenshots/03-planning-canvas.png)
 
-*Every screenshot in this README is captured live by `web/tests/screenshots.spec.ts` against a seeded backend trip (`tests/seed/seed-demo.sh`). The map area renders a token-free fallback canvas when `NEXT_PUBLIC_MAPBOX_TOKEN` isn't set — origins, candidate nodes, the destination star, and the locked route are all drawn from real backend coordinates. Set the token in `web/.env.local` for a full Mapbox basemap.*
+*Every screenshot in this README is captured live by `web/tests/screenshots.spec.ts` against a seeded backend trip (`tests/seed/seed-demo.sh`). The map area renders a key-free fallback canvas when `NEXT_PUBLIC_GOOGLE_MAPS_KEY` isn't set — origins, candidate nodes, the destination star, and the locked route are all drawn from real backend coordinates. Set the key in `web/.env.local` for a full Google Maps basemap.*
 
 ## The problem
 
@@ -69,9 +69,9 @@ flowchart LR
   next -- "REST + SignalR" --> api
 ```
 
-**Backend** is a .NET 10 minimal-API solution split into six projects: `Trips.Core` (DTOs + abstractions, the only leaf), `Trips.Data` (EF Core + PostGIS via NetTopologySuite), `Trips.Optimisation` (the two solvers + the bench harness + cost-split + return-leg + what-if), `Trips.Integrations` (TfNSW + Google Routes + geocoding clients), `Trips.Realtime` (SignalR hubs + GTFS-RT worker + an ETA recompute service), and `Trips.Api` (composition root, JWT auth, ~16 endpoints). Full dependency graph in [`docs/architecture.md`](docs/architecture.md).
+**Backend** is a .NET 10 minimal-API solution split into six projects: `Trips.Core` (DTOs + abstractions, the only leaf), `Trips.Data` (EF Core + PostGIS via NetTopologySuite), `Trips.Optimisation` (the two solvers + the bench harness + cost-split + return-leg + what-if), `Trips.Integrations` (TfNSW + Google Routes + geocoding clients), `Trips.Realtime` (SignalR hubs + GTFS-RT worker + an ETA recompute service), and `Trips.Api` (composition root, JWT auth, ~20 endpoints). Full dependency graph in [`docs/architecture.md`](docs/architecture.md).
 
-**Frontend** is Next.js 16 (App Router) with the entire UI rendered via React Server Components where possible, Mapbox GL JS for the map, TanStack Query for server state, and `@microsoft/signalr` for the live driver/passenger views.
+**Frontend** is Next.js 16 (App Router) with the entire UI rendered via React Server Components where possible, Google Maps (`@vis.gl/react-google-maps`) for the map, TanStack Query for server state, and `@microsoft/signalr` for the live driver/passenger views.
 
 The interesting bits, in approximate order of "how much engineering went in":
 
@@ -193,7 +193,7 @@ The what-if mode re-solves with two passengers dropped, warm-starting from the l
 - Next.js 16.2 (App Router, RSC-first), React 19.2
 - TypeScript 5, TanStack Query 5, Zustand 5
 - Tailwind 4 + shadcn/ui primitives + Base UI 1.5
-- Mapbox GL JS 3.24 + react-map-gl 8
+- Google Maps via `@vis.gl/react-google-maps` 1.8 (Maps JavaScript API)
 - @microsoft/signalr 10
 - `jose` for cookie-sealed sessions (NextAuth installed but not used — the API owns identity)
 
@@ -326,14 +326,14 @@ Project references follow the arrows above: `Trips.Api` depends on everything el
 
 ## Test counts
 
-- **Backend**: 125 xUnit tests across six test projects (Trips.Core.Tests, Trips.Data.Tests, Trips.Optimisation.Tests, Trips.Integrations.Tests, Trips.Api.Tests, Trips.Realtime.Tests).
+- **Backend**: 156 xUnit tests across six test projects (Trips.Core.Tests, Trips.Data.Tests, Trips.Optimisation.Tests, Trips.Integrations.Tests, Trips.Api.Tests, Trips.Realtime.Tests).
 - **Frontend**: Vitest + Testing Library unit tests under `web/src/components/**`.
 - **E2E**: Playwright suite at `web/tests/e2e/` — five UI-only smoke specs + three full-stack specs (`single-driver`, `multi-driver`, `what-if`). The full-stack specs require a live Trips.Api; the smoke specs don't.
 
 Run them all:
 
 ```bash
-dotnet test -c Release                       # 125 backend
+dotnet test -c Release                       # 156 backend
 cd web && npm run test                       # frontend unit
 cd web && npm run test:e2e                   # Playwright (UI-only smoke; full E2E needs the API up)
 ```
