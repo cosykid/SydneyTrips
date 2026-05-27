@@ -10,6 +10,11 @@ namespace Trips.Api.Mapping;
 /// </summary>
 internal static class Mappers
 {
+    /// <summary>How long before the arrival target the driver should land. The displayed route
+    /// timeline slides later so the driver leaves just-in-time and arrives this many minutes early —
+    /// real-world cushion without the long idle gap a <c>DepartAt</c>-anchored timeline produced.</summary>
+    private static readonly TimeSpan ArrivalSlack = TimeSpan.FromMinutes(5);
+
     public static TripDto ToDto(this Trip trip)
     {
         ArgumentNullException.ThrowIfNull(trip);
@@ -175,24 +180,48 @@ internal static class Mappers
             return NodeKind.Home;
         }
 
+        // Arrival target = midpoint of the trip's arrival window (matches the FE's "arrive by").
+        var arrivalTarget = trip is not null
+            ? trip.ArrivalWindowEarliest + (trip.ArrivalWindowLatest - trip.ArrivalWindowEarliest) / 2
+            : (DateTimeOffset?)null;
+
         var routes = solution.Routes
             .OrderBy(r => r.OrderIndex)
-            .Select(r => new DriverRouteDto(
-                Id: r.Id,
-                DriverId: r.DriverId,
-                TravelMins: r.TravelMins,
-                OrderIndex: r.OrderIndex,
-                Stops: r.Stops
-                    .OrderBy(s => s.OrderIndex)
-                    .Select(s => new StopDto(
-                        Id: s.Id,
-                        OrderIndex: s.OrderIndex,
-                        Longitude: s.Location.X,
-                        Latitude: s.Location.Y,
-                        CandidateNodeId: s.CandidateNodeId,
-                        NodeKind: (CandidateNodeKindDto)ResolveNodeKind(s.CandidateNodeId),
-                        EstimatedArrival: s.EstimatedArrival,
-                        Pickups: s.Pickups
+            .Select(r =>
+            {
+                // SolutionBuilder stamps every ETA forward from DepartAt, which is set well before
+                // the window — so the driver "arrives" long before the target and idles. Slide the
+                // whole route timeline later so the driver leaves just-in-time and lands ArrivalSlack
+                // minutes before the target. The shift is non-negative: we never pull a departure
+                // earlier than DepartAt, so a window too tight to reach on time keeps the original
+                // (earliest-possible) timing instead of inventing a pre-DepartAt departure.
+                var shiftMins = arrivalTarget is { } target
+                    ? Math.Max(0.0, (target - ArrivalSlack - trip!.DepartAt).TotalMinutes - r.TravelMins)
+                    : 0.0;
+                var departure = trip is not null
+                    ? trip.DepartAt.AddMinutes(shiftMins)
+                    : (DateTimeOffset?)null;
+
+                return new DriverRouteDto(
+                    Id: r.Id,
+                    DriverId: r.DriverId,
+                    TravelMins: r.TravelMins,
+                    OrderIndex: r.OrderIndex,
+                    DestinationArrival: departure?.AddMinutes(r.TravelMins),
+                    Departure: departure,
+                    Stops: r.Stops
+                        .OrderBy(s => s.OrderIndex)
+                        .Select(s => new StopDto(
+                            Id: s.Id,
+                            OrderIndex: s.OrderIndex,
+                            Longitude: s.Location.X,
+                            Latitude: s.Location.Y,
+                            CandidateNodeId: s.CandidateNodeId,
+                            NodeKind: (CandidateNodeKindDto)ResolveNodeKind(s.CandidateNodeId),
+                            // Same uniform shift as the destination ETA so pickups stay coherent
+                            // with the (later) departure rather than clustering near DepartAt.
+                            EstimatedArrival: s.EstimatedArrival.AddMinutes(shiftMins),
+                            Pickups: s.Pickups
                             .Select(pid =>
                             {
                                 if (keyByCnId.TryGetValue(s.CandidateNodeId, out var key))
@@ -205,7 +234,8 @@ internal static class Mappers
                                 return new PickupLegDto(pid, WalkMins: 0, PtMins: 0, Path: null);
                             })
                             .ToList()))
-                    .ToList()))
+                        .ToList());
+            })
             .ToList();
 
         return new SolutionDto(
@@ -251,7 +281,15 @@ internal static class Mappers
             {
                 coords.Add(new PathCoordinateDto(Longitude: p.Lng, Latitude: p.Lat));
             }
-            result.Add(new PathLegDto(leg.Mode, new PathDto(coords)));
+            result.Add(new PathLegDto(
+                leg.Mode,
+                new PathDto(coords),
+                leg.DurationMins,
+                leg.FromName,
+                leg.ToName,
+                leg.RouteShortName,
+                leg.DepartureTime,
+                leg.ArrivalTime));
         }
         return result;
     }

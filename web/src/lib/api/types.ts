@@ -387,6 +387,10 @@ export interface components {
             /** Format: int32 */
             orderIndex: number | string;
             stops: components["schemas"]["StopDto"][];
+            /** Format: date-time */
+            destinationArrival?: null | string;
+            /** Format: date-time */
+            departure?: null | string;
         };
         EnqueueRunResponse: {
             /** Format: uuid */
@@ -492,6 +496,18 @@ export interface components {
         PathLegDto: {
             mode: string;
             path: components["schemas"]["PathDto"];
+            /**
+             * Format: int32
+             * @default 0
+             */
+            durationMins: number | string;
+            fromName?: null | string;
+            toName?: null | string;
+            routeShortName?: null | string;
+            /** Format: date-time */
+            departureTime?: null | string;
+            /** Format: date-time */
+            arrivalTime?: null | string;
         };
         PickupLegDto: {
             /** Format: uuid */

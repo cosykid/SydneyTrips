@@ -19,6 +19,14 @@ public sealed class TfNswMockServer : IDisposable
 
     public string BaseUrl => _server.Url ?? throw new InvalidOperationException("Mock server not running");
 
+    /// <summary>The full request URLs (path + query) of every trip-plan call received, oldest first.
+    /// Lets tests assert the client formats <c>itdDate</c>/<c>itdTime</c> in Sydney local time.</summary>
+    public IReadOnlyList<string> TripPlanRequestUrls() =>
+        _server.LogEntries
+            .Where(e => e.RequestMessage.Path == "/v1/tp/trip")
+            .Select(e => e.RequestMessage.Url)
+            .ToList();
+
     private TfNswMockServer(WireMockServer server, string fixturesRoot)
     {
         _server = server;

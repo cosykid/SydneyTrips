@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronRight, Footprints, ListChecks, Timer } from "lucide-react";
+import { ChevronRight, ListChecks, Scale, Timer } from "lucide-react";
 import clsx from "clsx";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ export interface WeightSlidersProps {
 }
 
 interface Preset {
-  id: "fastest" | "fewest_stops" | "easy_walks";
+  id: "fastest" | "fewest_stops" | "fair_share";
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   weights: ObjectiveWeights;
@@ -25,29 +25,32 @@ interface Preset {
 const PRESETS: Preset[] = [
   {
     id: "fastest",
-    label: "Fastest",
+    label: "Less driving",
     icon: Timer,
-    weights: { drivingTime: 0.6, stops: 0.1, walking: 0.1, fairness: 0.2 },
+    weights: { driverBias: 0.75, stops: 0.1, fairness: 0.2 },
   },
   {
     id: "fewest_stops",
     label: "Fewest stops",
     icon: ListChecks,
-    weights: { drivingTime: 0.2, stops: 0.5, walking: 0.1, fairness: 0.2 },
+    weights: { driverBias: 0.5, stops: 0.5, fairness: 0.2 },
   },
   {
-    id: "easy_walks",
-    label: "Easy walks",
-    icon: Footprints,
-    weights: { drivingTime: 0.2, stops: 0.1, walking: 0.5, fairness: 0.2 },
+    id: "fair_share",
+    label: "Fair share",
+    icon: Scale,
+    weights: { driverBias: 0.5, stops: 0.15, fairness: 0.6 },
   },
 ];
 
 const ROWS: Array<{ key: keyof ObjectiveWeights; label: string; help: string }> = [
-  { key: "drivingTime", label: "Driving time", help: "Less time on the road overall." },
+  {
+    key: "driverBias",
+    label: "Driving vs public transport",
+    help: "Choose whether the plan protects passenger PT time or driver time.",
+  },
   { key: "stops", label: "Number of stops", help: "Fewer pickup stops along the way." },
-  { key: "walking", label: "Walking distance", help: "Shorter walks from home to pickup." },
-  { key: "fairness", label: "Fair sharing", help: "Share driving time evenly across drivers." },
+  { key: "fairness", label: "Fair sharing", help: "Share pickup detours evenly across drivers." },
 ];
 
 const EPS = 0.001;
@@ -55,9 +58,8 @@ const EPS = 0.001;
 function matchPreset(w: ObjectiveWeights): Preset["id"] | null {
   for (const p of PRESETS) {
     if (
-      Math.abs(p.weights.drivingTime - w.drivingTime) < EPS &&
+      Math.abs(p.weights.driverBias - w.driverBias) < EPS &&
       Math.abs(p.weights.stops - w.stops) < EPS &&
-      Math.abs(p.weights.walking - w.walking) < EPS &&
       Math.abs(p.weights.fairness - w.fairness) < EPS
     ) {
       return p.id;
@@ -77,9 +79,8 @@ export function WeightSliders({
   const advancedOpen = advancedExplicit ?? activePreset === null;
 
   function applyPreset(preset: Preset): void {
-    onChange("drivingTime", preset.weights.drivingTime);
+    onChange("driverBias", preset.weights.driverBias);
     onChange("stops", preset.weights.stops);
-    onChange("walking", preset.weights.walking);
     onChange("fairness", preset.weights.fairness);
   }
 
@@ -136,8 +137,8 @@ export function WeightSliders({
                 <Label htmlFor={`w-${row.key}`} className="text-xs">
                   {row.label}
                 </Label>
-                <span className="text-muted-foreground tabular-nums text-xs">
-                  {Math.round(weights[row.key] * 100)}%
+                <span className="text-muted-foreground text-xs">
+                  {formatWeightValue(row.key, weights[row.key])}
                 </span>
               </div>
               <Slider
@@ -152,6 +153,12 @@ export function WeightSliders({
                 disabled={disabled}
                 aria-label={row.label}
               />
+              {row.key === "driverBias" ? (
+                <div className="text-muted-foreground flex items-center justify-between text-[11px]">
+                  <span>Passenger time</span>
+                  <span>Driver time</span>
+                </div>
+              ) : null}
               <p className="text-muted-foreground text-[11px]">{row.help}</p>
             </div>
           ))}
@@ -175,9 +182,17 @@ export function WeightSliders({
 
 function matchesDefaults(w: ObjectiveWeights): boolean {
   return (
-    Math.abs(w.drivingTime - DEFAULT_WEIGHTS.drivingTime) < EPS &&
+    Math.abs(w.driverBias - DEFAULT_WEIGHTS.driverBias) < EPS &&
     Math.abs(w.stops - DEFAULT_WEIGHTS.stops) < EPS &&
-    Math.abs(w.walking - DEFAULT_WEIGHTS.walking) < EPS &&
     Math.abs(w.fairness - DEFAULT_WEIGHTS.fairness) < EPS
   );
+}
+
+function formatWeightValue(key: keyof ObjectiveWeights, value: number): string {
+  if (key !== "driverBias") return `${Math.round(value * 100)}%`;
+  if (value <= 0.2) return "Passenger time";
+  if (value < 0.45) return "Leans passenger";
+  if (value <= 0.55) return "Balanced";
+  if (value < 0.8) return "Leans driver";
+  return "Driver time";
 }

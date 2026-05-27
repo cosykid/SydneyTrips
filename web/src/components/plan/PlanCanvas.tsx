@@ -67,7 +67,7 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weights.drivingTime, weights.stops, weights.walking, weights.fairness]);
+  }, [weights.driverBias, weights.stops, weights.fairness]);
 
   async function runOptimise(currentWeights = weights) {
     try {
@@ -121,7 +121,9 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
   }
 
   const participantCount = data.participants.length;
-  const pickupCount = data.candidateNodes.length;
+  const pickupCount = selectedSolution
+    ? selectedSolution.metrics.totalStops
+    : data.candidateNodes.length;
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -131,7 +133,7 @@ export function PlanCanvas({ tripId }: PlanCanvasProps): React.JSX.Element {
           participants={data.participants}
           candidateNodes={data.candidateNodes}
           solution={selectedSolution}
-          trip={{ id: data.id, name: data.name }}
+          trip={{ id: data.id, name: data.name, arriveBy: data.arriveBy }}
           viewState={viewState}
           onMove={setViewState}
         />

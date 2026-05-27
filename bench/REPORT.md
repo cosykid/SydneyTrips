@@ -16,7 +16,7 @@ Each row in the **Summary table** averages over multiple seeds for one instance 
 - **OR-Tools obj** is the best objective found by the CP-SAT model within the wall-clock budget. If OR-Tools terminates with `Optimal` status it is *the* optimum; otherwise it's just a feasible upper bound.
 - **Heuristic obj** is the best objective from cheapest-insertion construction + simulated-annealing local search.
 - **Gap %** is `(heur − ortools) / ortools × 100`. Negative means the heuristic beat OR-Tools' best-found (only possible when OR-Tools timed out before reaching optimal).
-- **Obj** is a weighted sum of five terms — drive, stops, walk+PT, arrival-spread, fairness — using `ObjectiveWeights.Balanced`. The two solvers use the *exact same* `ObjectiveEvaluator` so the values are directly comparable.
+- **Obj** is a weighted sum of five terms — drive, stops, PT-access time, arrival-spread, fairness — using `ObjectiveWeights.Balanced`. The two solvers use the *exact same* `ObjectiveEvaluator` so the values are directly comparable.
 
 Travel times are synthetic: haversine × 1.25 congestion multiplier. The bench does not call the real Google Routes API — see `InstanceGenerator.cs` for the model.
 
@@ -106,7 +106,7 @@ Travel times are synthetic: haversine × 1.25 congestion multiplier. The bench d
 
 ### Small instance: 5p/2d seed=11 → Bondi Beach
 
-**OR-Tools** objective=77.60 terms=[drive=75.60, stops=2.00, walk=0.00, spread=0.00, fair=0.00] ms=209
+**OR-Tools** objective=77.60 terms=[drive=75.60, stops=2.00, pt_access=0.00, spread=0.00, fair=0.00] ms=209
 
 ```mermaid
 graph LR
@@ -122,7 +122,7 @@ graph LR
 
 ```
 
-**Heuristic** objective=77.60 terms=[drive=75.60, stops=2.00, walk=0.00, spread=0.00, fair=0.00] ms=10002 iters=41,645,554
+**Heuristic** objective=77.60 terms=[drive=75.60, stops=2.00, pt_access=0.00, spread=0.00, fair=0.00] ms=10002 iters=41,645,554
 
 ```mermaid
 graph LR
@@ -140,7 +140,7 @@ graph LR
 
 ### Larger instance: 20p/3d seed=11 → Bondi Beach
 
-**OR-Tools** objective=385.06 terms=[drive=323.45, stops=8.00, walk=0.00, spread=26.80, fair=26.80] ms=10017
+**OR-Tools** objective=385.06 terms=[drive=323.45, stops=8.00, pt_access=0.00, spread=26.80, fair=26.80] ms=10017
 
 ```mermaid
 graph LR
@@ -173,7 +173,7 @@ graph LR
 
 ```
 
-**Heuristic** objective=341.11 terms=[drive=273.56, stops=8.00, walk=0.00, spread=29.78, fair=29.78] ms=10000 iters=17,523,596
+**Heuristic** objective=341.11 terms=[drive=273.56, stops=8.00, pt_access=0.00, spread=29.78, fair=29.78] ms=10000 iters=17,523,596
 
 ```mermaid
 graph LR
@@ -253,4 +253,3 @@ iter        0                              …                                 7
 ## Raw data
 
 All per-instance numbers are in [`results.csv`](results.csv). Columns include per-term objective values, OR-Tools status/gap/branches, heuristic iteration count and acceptance rate, and stop counts.
-

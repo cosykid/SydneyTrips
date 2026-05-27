@@ -120,7 +120,7 @@ public static class OptimisationEndpoints
         {
             ("fastest", ObjectiveWeights.Fastest),
             ("fewest-stops", ObjectiveWeights.FewestStops),
-            ("least-walking", ObjectiveWeights.LeastWalking),
+            ("least-transit", ObjectiveWeights.LeastTransit),
         };
 
         var results = new List<SolutionDto>(capacity: presets.Length);

@@ -1,6 +1,6 @@
 # SydneyTrips
 
-Plan a Saturday at the beach with eight friends and three cars. Some live by Bondi, some over near Parramatta, two drive themselves and the rest will catch a train to a station that the driver can swing past on the way north. **SydneyTrips picks who rides with whom, where the rendezvous points are, and what order the driver picks them up in** — co-optimising all of that against a multi-objective cost (driving time, total stops, passenger walk/PT minutes, arrival spread, fairness). It is also a live coordinator: once you lock a plan, the drivers and passengers each get a real-time view that updates as cars move.
+Plan a Saturday at the beach with eight friends and three cars. Some live by Bondi, some over near Parramatta, two drive themselves and the rest will catch a train to a station that the driver can swing past on the way north. **SydneyTrips picks who rides with whom, where the rendezvous points are, and what order the driver picks them up in** — co-optimising all of that against a multi-objective cost (travel time, total stops, passenger public-transport access time, arrival spread, fairness). It is also a live coordinator: once you lock a plan, the drivers and passengers each get a real-time view that updates as cars move.
 
 The interesting bit isn't the routing — it's that every passenger has a *set* of feasible pickup points (their home plus reachable train stations and bus stops), so the solver doesn't just route, it picks the rendezvous structure too. The literature calls this the **Dial-a-Ride Problem with flexible pickup points**; this repo ships a Google OR-Tools CP-SAT formulation, a custom cheapest-insertion + simulated-annealing heuristic, and a bench harness that compares them across 60 synthetic Sydney instances.
 
@@ -22,11 +22,11 @@ We co-optimise five terms:
 | --- | --- |
 | `drive` | Total driving minutes across all drivers (fuel + driver patience). |
 | `stops` | Total number of pickup stops (each stop costs the driver minutes of stationary time). |
-| `walk + PT` | Total non-driver minutes spent walking or on public transport _en route_ to their pickup. |
+| `PT access` | Total non-driver minutes spent reaching pickup by public transport, including walking segments. |
 | `arrival spread` | The gap between earliest and latest driver arrival at destination (everyone meeting up matters). |
-| `fairness` | The variance of pickup-detour minutes across drivers — no one driver should be doing dramatically more work. |
+| `fairness` | The maximum pickup-detour burden above each driver's direct solo trip — no one driver should be doing dramatically more group work. |
 
-Each term is normalised to roughly the same scale; the user chooses weights via sliders in the planner.
+Each term is normalised to roughly the same scale; the planner exposes a driving-vs-public-transport slider that trades driver minutes against passenger PT-access minutes.
 
 ### Why it's interesting
 
@@ -158,7 +158,7 @@ The trip page lists every participant with their role (driver/passenger) and hom
 
 ![Planning canvas with weight sliders + Sydney participant + node markers](docs/screenshots/03-planning-canvas.png)
 
-The planner shows the destination chip, weight sliders for the five objective terms, the participant list, and the canvas with markers for every home plus candidate PT pickup nodes. Hitting "Optimise" enqueues a background run; the Pareto carousel populates with three alternatives in ~5–10s for a typical group size. Locking a solution makes it the canonical assignment.
+The planner shows the destination chip, route-priority sliders, the participant list, and the canvas with markers for every home plus candidate PT pickup nodes. Hitting "Optimise" enqueues a background run; changing a priority re-solves the current plan after a short debounce. Locking a solution makes it the canonical assignment. Hovering any person's name opens a Google-Maps-style timed itinerary: passengers get a step-by-step walk/public-transport breakdown to their pickup (clock time, line, and minutes per leg), drivers get their pickup-by-pickup driving timeline ending at the destination.
 
 ### Live driver view
 

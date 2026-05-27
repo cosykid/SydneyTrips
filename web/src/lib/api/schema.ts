@@ -74,16 +74,14 @@ export interface CandidateNode {
 }
 
 export interface ObjectiveWeights {
-  drivingTime: number;
+  driverBias: number;
   stops: number;
-  walking: number;
   fairness: number;
 }
 
 export const DEFAULT_WEIGHTS: ObjectiveWeights = {
-  drivingTime: 0.4,
+  driverBias: 0.5,
   stops: 0.2,
-  walking: 0.25,
   fairness: 0.15,
 };
 
@@ -111,6 +109,14 @@ export interface SolutionRoute {
   stops: SolutionStop[];
   drivingMinutes: number;
   drivingDistanceKm: number;
+  /** Estimated clock time the driver reaches the destination, on the same timeline as each stop's
+   *  `arriveAt` and `departure`. The backend anchors it a few minutes before the arrival target so
+   *  the driver lands roughly on time. Undefined when the backend couldn't anchor it. */
+  destinationArrival?: IsoDateTime;
+  /** Estimated clock time the driver leaves home (`destinationArrival − drivingMinutes`). The
+   *  timeline slides later than the scheduled trip start so the driver departs just-in-time instead
+   *  of arriving far too early. Undefined when the backend couldn't anchor it. */
+  departure?: IsoDateTime;
 }
 
 export interface SolutionStop {
@@ -145,22 +151,38 @@ export interface PickupLeg {
   pathLegs?: PathLeg[];
 }
 
-/** One mode-tagged segment of a passenger's home→pickup journey. */
+/** One mode-tagged segment of a passenger's home→pickup journey. The fields after `path` back the
+ *  Google-Maps-style timed itinerary shown on hover — all optional, since stub / pre-feature data
+ *  carries only mode + geometry. */
 export interface PathLeg {
   /** Raw TfNSW mode: "walk" | "train" | "metro" | "bus" | "ferry" | "lightrail" | "unknown". */
   mode: string;
   path: LatLng[];
+  /** Travel time of this leg in minutes. */
+  durationMins?: number;
+  /** Stop name this leg departs from (e.g. "Kingsford Light Rail"). */
+  fromName?: string;
+  /** Stop name this leg arrives at. */
+  toName?: string;
+  /** Line label for PT legs (e.g. "T1", "L2", "389"). Absent on walk legs. */
+  routeShortName?: string;
+  /** Scheduled clock time this leg departs its origin (ISO-8601). */
+  departureTime?: IsoDateTime;
+  /** Scheduled clock time this leg reaches its destination (ISO-8601). */
+  arrivalTime?: IsoDateTime;
 }
 
 export interface Solution {
   id: Uuid;
-  label: string; // "fastest" | "fewest_stops" | "least_walking" or human label
+  label: string; // "fastest" | "fewest_stops" | "least_transit" or human label
   metrics: {
     totalDrivingMinutes: number;
     maxDrivingMinutes: number;
     totalStops: number;
     totalWalkMetres: number;
     maxWalkMetres: number;
+    maxJourneyMinutes: number;
+    maxJourneyParticipantName?: string;
     fairnessIndex: number;
   };
   routes: SolutionRoute[];

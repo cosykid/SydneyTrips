@@ -42,6 +42,57 @@ export const PT_FALLBACK_COLOUR = "#7C3AED";
 /** Slate used for the walking portion of a pickup leg, independent of mode. */
 export const WALK_COLOUR = "#475569";
 
+/** Human-readable name for a raw TfNSW leg mode string, for the itinerary's per-leg label. */
+export function legModeName(mode: string): string {
+  switch (mode.toLowerCase()) {
+    case "walk":
+      return "Walk";
+    case "train":
+    case "rail":
+    case "heavy_rail":
+      return "Train";
+    case "metro":
+      return "Metro";
+    case "bus":
+      return "Bus";
+    case "ferry":
+    case "wharf":
+      return "Ferry";
+    case "lightrail":
+    case "light_rail":
+    case "tram":
+      return "Light Rail";
+    default:
+      return "Transit";
+  }
+}
+
+/** Single-letter mark for a PT leg's mode chip (T / M / B / F / L), matching Sydney signage.
+ *  Returns null for walk legs (which use a pedestrian glyph instead of a chip). */
+export function legMark(mode: string): string | null {
+  switch (mode.toLowerCase()) {
+    case "walk":
+      return null;
+    case "metro":
+      return "M";
+    case "bus":
+      return "B";
+    case "ferry":
+    case "wharf":
+      return "F";
+    case "lightrail":
+    case "light_rail":
+    case "tram":
+      return "L";
+    case "train":
+    case "rail":
+    case "heavy_rail":
+      return "T";
+    default:
+      return "T";
+  }
+}
+
 /** Style for one mode-tagged journey segment, keyed by the raw TfNSW mode string
  *  ("walk" | "train" | "metro" | "bus" | "ferry" | "lightrail" | …). Walk segments render as a
  *  dashed slate line; each PT mode gets its TfNSW colour. Unknown modes fall back to violet. */

@@ -30,8 +30,9 @@ namespace Trips.Api.Services;
 /// Hubs within <see cref="DestinationProximityMetres"/> of the trip destination are dropped —
 /// those collapse "carpool" into "passenger PTs all the way", which defeats the point. The
 /// <see cref="MaxAccessMins"/> cap keeps far-flung hubs out of the set; we deliberately do not cap
-/// walking separately — a long walk is the objective's concern (the walking-distance weight), not
-/// a hard gate, so a passenger willing to walk to a station isn't denied that option.</para>
+/// walking separately — a long access leg is the objective's concern (the public-transport access
+/// time weight), not a hard gate, so a passenger willing to walk to a station isn't denied that
+/// option.</para>
 ///
 /// <para><b>PT variability.</b> Plans are computed against <c>trip.DepartAt − safetyBuffer</c>
 /// so the recommended hubs have slack against small delays. Time-of-day variation falls out
@@ -49,8 +50,9 @@ public sealed class ParticipantCandidateNodeService
     /// <summary>
     /// Sanity cap on a passenger's <em>total</em> access journey to a hub — walk + PT minutes
     /// combined. Walking is just another access mode (the same way the rider experiences a PT leg),
-    /// so we don't cap it separately; how much a long walk "costs" is the objective's job (the
-    /// Walking-distance weight), not a hard feasibility gate that silently deletes good hubs. This
+    /// so we don't cap it separately; how much a long access journey "costs" is the objective's
+    /// job (the public-transport access-time weight), not a hard feasibility gate that silently
+    /// deletes good hubs. This
     /// cap only exists to keep genuinely absurd candidates out — e.g. a Bondi passenger seeing
     /// Hornsby as "reachable" via a two-hour journey.
     /// </summary>
@@ -413,7 +415,15 @@ public sealed class ParticipantCandidateNodeService
             {
                 points.Add(new PathPoint(p.X, p.Y));
             }
-            result.Add(new PathLeg(leg.Mode, points));
+            result.Add(new PathLeg(
+                leg.Mode,
+                points,
+                leg.DurationMins,
+                leg.FromName,
+                leg.ToName,
+                leg.RouteShortName,
+                leg.DepartureTime,
+                leg.ArrivalTime));
         }
         return result.Count > 0 ? result : null;
     }

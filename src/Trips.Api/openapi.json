@@ -1214,6 +1214,20 @@
             "items": {
               "$ref": "#/components/schemas/StopDto"
             }
+          },
+          "destinationArrival": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "departure": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -1645,6 +1659,47 @@
           },
           "path": {
             "$ref": "#/components/schemas/PathDto"
+          },
+          "durationMins": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 0
+          },
+          "fromName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "toName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "routeShortName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "departureTime": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "arrivalTime": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },

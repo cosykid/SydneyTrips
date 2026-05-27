@@ -30,6 +30,8 @@ type DriverRouteDto = components["schemas"]["DriverRouteDto"];
 type StopDto = components["schemas"]["StopDto"];
 type CandidateNodeKindDto = components["schemas"]["CandidateNodeKindDto"];
 
+const WALK_METRES_PER_MINUTE = 80;
+
 // openapi-typescript renders `format: double` as `number | string`; the API
 // always returns numbers but we coerce to be safe.
 function num(v: number | string): number {
@@ -107,7 +109,7 @@ export function apiParticipantToUi(p: ParticipantWithNodesDto | ParticipantDto):
     prefs: {
       // The .NET side stores walk budget in minutes — we approximate ~80 m/min
       // walking pace so the UI can keep its metres semantics.
-      maxWalkMetres: num(p.preferences.walkBudgetMins) * 80,
+      maxWalkMetres: num(p.preferences.walkBudgetMins) * WALK_METRES_PER_MINUTE,
       maxDetourMinutes: num(p.preferences.detourToleranceMins),
     },
   };
@@ -169,11 +171,17 @@ function apiStopToUi(s: StopDto): SolutionStop {
     pathLegs: p.pathLegs?.map((leg) => ({
       mode: leg.mode,
       path: leg.path.coordinates.map((c) => pointToLatLng(c.longitude, c.latitude)),
+      durationMins: num(leg.durationMins),
+      fromName: leg.fromName ?? undefined,
+      toName: leg.toName ?? undefined,
+      routeShortName: leg.routeShortName ?? undefined,
+      departureTime: leg.departureTime ?? undefined,
+      arrivalTime: leg.arrivalTime ?? undefined,
     })),
   }));
   // walkMetres is the legacy aggregate field — approximate by summing each leg's walk minutes
   // at ~80 m/min so existing consumers (CostBreakdown, etc.) keep working.
-  const walkMetres = legs.reduce((m, l) => m + l.walkMins * 80, 0);
+  const walkMetres = legs.reduce((m, l) => m + l.walkMins * WALK_METRES_PER_MINUTE, 0);
   return {
     candidateNodeId: s.candidateNodeId,
     location: pointToLatLng(s.longitude, s.latitude),
@@ -202,7 +210,17 @@ function apiRouteToUi(r: DriverRouteDto, idx: number, trip: Trip): SolutionRoute
     stops,
     drivingMinutes: num(r.travelMins),
     drivingDistanceKm: 0,
+    destinationArrival: r.destinationArrival ?? undefined,
+    departure: r.departure ?? undefined,
   };
+}
+
+function minutesBetween(start?: string, end?: string): number | null {
+  if (!start || !end) return null;
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
+  return Math.max(0, (endMs - startMs) / 60000);
 }
 
 export function apiToSolution(s: SolutionDto, trip: Trip): Solution {
@@ -210,11 +228,35 @@ export function apiToSolution(s: SolutionDto, trip: Trip): Solution {
   const totalDrivingMinutes = routes.reduce((sum, r) => sum + r.drivingMinutes, 0);
   const maxDrivingMinutes = routes.reduce((m, r) => Math.max(m, r.drivingMinutes), 0);
   const totalStops = routes.reduce((sum, r) => sum + r.stops.length, 0);
-  // Driver fairness as a 0–1 share index: min/max of per-driver driving minutes (idle drivers count
-  // as 0, so one car doing everything reads as "uneven"). 1.0 when every driver shares the road
-  // equally; a single-driver trip is trivially even. Backend emits a route per driver, including
-  // idle ones at 0 min, so this reflects the actual split. (Previously hardcoded to 0, which made
-  // the "Driver fairness" indicator always show "Uneven".)
+  const walkMetresByPickup = routes.flatMap((r) =>
+    r.stops.flatMap((s) => s.pickupLegs.map((l) => l.walkMins * WALK_METRES_PER_MINUTE)),
+  );
+  const totalWalkMetres = walkMetresByPickup.reduce((sum, metres) => sum + metres, 0);
+  const maxWalkMetres = walkMetresByPickup.reduce((max, metres) => Math.max(max, metres), 0);
+  const participantNames = Object.fromEntries(trip.participants.map((p) => [p.id, p.displayName]));
+  const journeys = routes.flatMap((r) => [
+    {
+      minutes: r.drivingMinutes,
+      participantName: r.driverDisplayName,
+    },
+    ...r.stops.flatMap((stop) =>
+      stop.pickupLegs.map((leg) => ({
+        minutes:
+          leg.walkMins +
+          leg.ptMins +
+          (minutesBetween(stop.arriveAt, r.destinationArrival) ?? 0),
+        participantName: participantNames[leg.participantId],
+      })),
+    ),
+  ]);
+  const longestJourney = journeys.reduce(
+    (longest, journey) => (journey.minutes > longest.minutes ? journey : longest),
+    { minutes: 0, participantName: undefined as string | undefined },
+  );
+  // Display-only route balance as a 0-1 share index: min/max of per-driver displayed driving
+  // minutes. The solver's Fair sharing objective is stricter: it optimises pickup detour above each
+  // driver's direct solo trip. The API does not currently expose that unweighted per-driver burden,
+  // so keep this as a simple visual summary of route-time balance.
   const drivingMins = routes.map((r) => r.drivingMinutes);
   const maxDrive = drivingMins.length ? Math.max(...drivingMins) : 0;
   const minDrive = drivingMins.length ? Math.min(...drivingMins) : 0;
@@ -226,8 +268,10 @@ export function apiToSolution(s: SolutionDto, trip: Trip): Solution {
       totalDrivingMinutes,
       maxDrivingMinutes,
       totalStops,
-      totalWalkMetres: 0,
-      maxWalkMetres: 0,
+      totalWalkMetres,
+      maxWalkMetres,
+      maxJourneyMinutes: longestJourney.minutes,
+      maxJourneyParticipantName: longestJourney.participantName,
       fairnessIndex,
     },
     routes,

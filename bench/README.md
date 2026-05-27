@@ -44,4 +44,4 @@ See `Trips.Bench/Generator/InstanceGenerator.cs` for the seeding logic and `Trip
 
 This is the canonical "exact solver vs metaheuristic" story for the size range a group-trip planner actually needs to handle. The README quotes it as the **why we ship both** justification — the CP-SAT solver is there for the guarantee on small inputs and as a baseline to compare against; the heuristic is what runs in production.
 
-The objective function (`drive + stops + walk_pt + arrival_spread + fairness`, weighted) is identical between solvers — both pull from `ObjectiveEvaluator` in `Trips.Optimisation` — so the gap numbers are directly comparable.
+The objective function (`drive + stops + pt_access + arrival_spread + fairness`, weighted) is identical between solvers — both pull from `ObjectiveEvaluator` in `Trips.Optimisation` — so the gap numbers are directly comparable.

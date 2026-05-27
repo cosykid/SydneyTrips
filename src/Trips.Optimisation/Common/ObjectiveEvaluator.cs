@@ -19,13 +19,14 @@ public static class ObjectiveEvaluator
     public const double StopCost = 1.0;
 
     /// <summary>
-    /// Multiplier applied to <em>driver</em> travel minutes, on top of the user's DriveTime weight.
+    /// Multiplier applied to <em>driver</em> travel minutes, on top of the user's travel-time weight.
     /// A minute of active driving (a person's time + a car on the road + congestion) is treated as
     /// more costly than a minute of a passenger riding existing public transport — so the same
-    /// passenger-minutes term (walk + PT) competes against a deliberately heavier driving term.
+    /// passenger access-time term (PT, including walks to pickup) competes against a deliberately
+    /// heavier driving term.
     ///
     /// <para>Without this, driver minutes and passenger PT minutes are weighed 1:1, so passengers
-    /// only shift onto transit once the DriveTime slider is cranked to extremes; the premium makes
+    /// only shift onto transit once the travel-time weight is cranked to extremes; the premium makes
     /// the trade flip at moderate slider positions. <c>OrToolsSolver</c> reads the same constant so
     /// the two solvers' objectives stay byte-for-byte comparable. Tune here if driving feels too
     /// cheap or too dear.</para>
@@ -99,8 +100,11 @@ public static class ObjectiveEvaluator
             stops += routesPerDriver[d].Count * StopCost;
         }
 
-        // γ · Σ (walk+pt)(p,n)·assign[d,p,n]
-        double walk = 0.0;
+        // γ · Σ public_transport_access_time(p,n)·assign[d,p,n]
+        // This is the passenger's full home→pickup time by public transport, including walking
+        // segments. The UI exposes it as one side of the driving-vs-public-transport balance
+        // rather than a standalone walking objective.
+        double transitAccess = 0.0;
         var passengerArrival = new double[input.Passengers.Count];
         for (var p = 0; p < input.Passengers.Count; p++)
         {
@@ -112,7 +116,7 @@ public static class ObjectiveEvaluator
                 // Infeasible — return very high cost so any caller comparing solutions discards it.
                 return EvaluationResult.Infeasible;
             }
-            walk += passenger.WalkPtMinsByNodeIndex[localIndex];
+            transitAccess += passenger.WalkPtMinsByNodeIndex[localIndex];
 
             // For arrival-spread / fairness we record the *driver*'s arrival at destination — every
             // passenger on the same driver arrives together. Compute below.
@@ -144,9 +148,18 @@ public static class ObjectiveEvaluator
         }
 
         // ε · fairness — "share driving time evenly across drivers" (the UI's framing). Defined as
-        // the *maximum* driver driving minutes (Cmax / minmax makespan), with idle drivers counting
-        // as zero. The journey of how we got here is worth recording because each prior surrogate
-        // failed in a different way and the next maintainer will be tempted to revert:
+        // the maximum extra driving burden imposed by pickups:
+        //
+        //     max_d max(0, route_time_d - direct_solo_time_d)
+        //
+        // Idle drivers count as zero burden. A driver's own home→destination distance is a fact of
+        // where they live; fairness should only charge the additional inconvenience created by
+        // carpooling. This is what makes a pickup near a driver's natural route attractive: if
+        // Steve already drives past Epping, picking up Angela there is a small burden even if his
+        // total route time is not the shortest.
+        //
+        // The journey of how we got here is worth recording because each prior surrogate failed in
+        // a different way and the next maintainer will be tempted to revert:
         //
         //   1. max − min over *passenger* journey times — identically zero when every passenger
         //      rides the same driver, so the slider did nothing on trips one car could swallow.
@@ -156,30 +169,35 @@ public static class ObjectiveEvaluator
         //      levers to close the gap, and "pull the short route *up* by detouring it" is often
         //      cheaper than restructuring the long one. Drivers near the destination got dragged
         //      into wasteful loops to "share the load," which the user correctly flagged as absurd.
+        //   4. max raw driver driving minutes — avoids the "extend short routes" bug, but mistakes
+        //      natural geography for unfairness. Someone who lives far away looks overloaded even
+        //      when their pickups are on the way.
         //
-        // Min-max only has the good lever: reducing the maximum requires shortening the longest
-        // route (or splitting it onto a previously idle driver, which raises that driver's time but
-        // only matters if it exceeds the prior max). It never rewards extending a short route. Idle
-        // drivers don't appear in the max, so a single-car solution that's genuinely optimal stays
-        // optimal — no spurious pressure to activate a second car on trips that don't need it. The
-        // CP-SAT model in OrToolsSolver encodes the identical surrogate so the two objective values
-        // stay directly comparable in the benchmark report.
+        // Min-max extra burden only has the useful lever: reducing the maximum requires moving
+        // pickup detour off the most inconvenienced driver. It never rewards extending a short
+        // route, and it never treats an idle driver's solo commute as work done for the group. The
+        // travel term above is untouched. The CP-SAT model in OrToolsSolver encodes the identical
+        // surrogate so the two objective values stay comparable.
         double fairness = 0.0;
         if (input.Drivers.Count > 0)
         {
-            double maxT = 0.0;
+            double maxBurden = 0.0;
             for (var d = 0; d < input.Drivers.Count; d++)
             {
-                if (driverTravel[d] > maxT) maxT = driverTravel[d];
+                if (!driverHasLoad[d]) continue;
+
+                var solo = matrix[input.Drivers[d].OriginNodeIndex, destinationNodeIndex];
+                var burden = Math.Max(0.0, driverTravel[d] - solo);
+                if (burden > maxBurden) maxBurden = burden;
             }
-            fairness = maxT;
+            fairness = maxBurden;
         }
 
         var terms = new[]
         {
             weights.DriveTime * DriverMinutePremium * travel,
             weights.StopCount * stops,
-            weights.WalkAndPt * walk,
+            weights.WalkAndPt * transitAccess,
             weights.ArrivalSpread * spread,
             weights.Fairness * fairness,
         };

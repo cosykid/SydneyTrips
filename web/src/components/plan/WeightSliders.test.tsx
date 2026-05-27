@@ -14,13 +14,14 @@ describe("WeightSliders", () => {
       />,
     );
 
-    expect(screen.getByText("Driving time")).toBeInTheDocument();
+    expect(screen.getByText("Driving vs public transport")).toBeInTheDocument();
     expect(screen.getByText("Number of stops")).toBeInTheDocument();
-    expect(screen.getByText("Walking distance")).toBeInTheDocument();
+    expect(screen.queryByText("Walking distance")).not.toBeInTheDocument();
     expect(screen.getByText("Fair sharing")).toBeInTheDocument();
 
-    // Default driving-time weight is 0.40 — shown as a percentage.
-    expect(screen.getByText("40%")).toBeInTheDocument();
+    expect(screen.getByText("Balanced")).toBeInTheDocument();
+    expect(screen.getByText("Passenger time")).toBeInTheDocument();
+    expect(screen.getByText("Driver time")).toBeInTheDocument();
   });
 
   it("calls onReset when the user clicks reset", async () => {
@@ -28,7 +29,7 @@ describe("WeightSliders", () => {
     const user = userEvent.setup();
     render(
       <WeightSliders
-        weights={{ ...DEFAULT_WEIGHTS, drivingTime: 0.5, stops: 0.3, walking: 0.1, fairness: 0.1 }}
+        weights={{ ...DEFAULT_WEIGHTS, driverBias: 0.5, stops: 0.3, fairness: 0.1 }}
         onChange={() => {}}
         onReset={onReset}
       />,

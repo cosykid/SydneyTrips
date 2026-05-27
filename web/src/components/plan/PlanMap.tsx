@@ -15,13 +15,21 @@ import type {
   Participant,
   PathLeg,
   Solution,
+  SolutionRoute,
   TripSummary,
 } from "@/lib/api/schema";
 import { driverColour } from "@/lib/map/palette";
 import { GooglePolyline } from "@/lib/map/google-polyline";
 import { useRoutePolylines } from "@/lib/map/useRoutePolylines";
 import { metresPerPixel, offsetPath } from "@/lib/map/offset";
-import { PT_FALLBACK_COLOUR, WALK_COLOUR, legStyle, transitStyle } from "@/lib/map/transit";
+import {
+  PT_FALLBACK_COLOUR,
+  WALK_COLOUR,
+  legMark,
+  legModeName,
+  legStyle,
+  transitStyle,
+} from "@/lib/map/transit";
 import { TransitBadge } from "@/components/map/TransitBadge";
 import { MapFallback } from "@/components/map/MapFallback";
 import type { MapViewState } from "@/lib/store";
@@ -31,7 +39,7 @@ export interface PlanMapProps {
   participants: Participant[];
   candidateNodes: CandidateNode[];
   solution?: Solution;
-  trip?: Pick<TripSummary, "id" | "name">;
+  trip?: Pick<TripSummary, "id" | "name" | "arriveBy">;
   viewState: MapViewState;
   onMove: (next: MapViewState) => void;
 }
@@ -81,6 +89,8 @@ interface PassengerLeg {
   path?: LatLng[];
   /** The driver picking them up — used in the hover detail panel, not in the leg's visual style. */
   driverColour: string;
+  /** Display name of the driver picking them up, shown at the foot of the hover itinerary. */
+  driverName: string;
 }
 
 function PlanMapInner({
@@ -88,6 +98,7 @@ function PlanMapInner({
   participants,
   candidateNodes,
   solution,
+  trip,
   viewState,
   onMove,
 }: PlanMapProps): React.JSX.Element {
@@ -152,6 +163,7 @@ function PlanMapInner({
             pathLegs: leg.pathLegs && leg.pathLegs.length > 0 ? leg.pathLegs : undefined,
             path: leg.path && leg.path.length >= 2 ? leg.path : undefined,
             driverColour: colour,
+            driverName: route.driverDisplayName,
           });
         }
       }
@@ -170,13 +182,21 @@ function PlanMapInner({
     return out;
   }, [solution]);
 
+  const participantsById = useMemo<Record<string, Participant>>(() => {
+    const out: Record<string, Participant> = {};
+    for (const p of participants) out[p.id] = p;
+    return out;
+  }, [participants]);
+
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const hovered = hoveredId
-    ? participants.find((p) => p.id === hoveredId) ?? null
-    : null;
+  const hovered = hoveredId ? participantsById[hoveredId] ?? null : null;
   const hoveredLeg = hoveredId
     ? passengerLegs.find((l) => l.participantId === hoveredId) ?? null
     : null;
+  const hoveredDriverRoute =
+    hovered?.role === "driver"
+      ? solution?.routes.find((r) => r.driverParticipantId === hovered.id) ?? null
+      : null;
 
   return (
     <Map
@@ -297,41 +317,9 @@ function PlanMapInner({
         ];
       })}
 
-      {/* Midpoint label per leg: a TfNSW mode chip + minute breakdown so a glance answers both
-          "is this person walking or riding PT?" and "which mode?". */}
-      {passengerLegs.map((leg) => {
-        if (leg.ptMins <= 0 && leg.walkMins <= 0) return null;
-        // Anchor on the middle of the real PT path when we have it, else the crow-fly midpoint.
-        const mid =
-          leg.path && leg.path.length >= 2
-            ? leg.path[Math.floor(leg.path.length / 2)]
-            : midpoint(leg.origin, leg.pickup);
-        const style = transitStyle(leg.mode);
-        return (
-          <AdvancedMarker
-            key={`leg-label-${leg.participantId}`}
-            position={{ lat: mid.lat, lng: mid.lng }}
-          >
-            <div
-              className="flex items-center gap-1 rounded-full bg-white/95 px-1.5 py-0.5 text-[10px] font-medium shadow ring-1 ring-slate-300"
-              style={{ whiteSpace: "nowrap", lineHeight: 1.1 }}
-            >
-              {leg.ptMins > 0 ? (
-                <>
-                  {style ? <TransitBadge modality={leg.mode} size={13} /> : <span>🚆</span>}
-                  <span style={{ color: style?.color ?? PT_FALLBACK_COLOUR }}>
-                    {leg.walkMins > 0
-                      ? `${leg.walkMins} min walk · ${leg.ptMins} min`
-                      : `${leg.ptMins} min`}
-                  </span>
-                </>
-              ) : (
-                <span style={{ color: WALK_COLOUR }}>🚶 {leg.walkMins} min walk</span>
-              )}
-            </div>
-          </AdvancedMarker>
-        );
-      })}
+      {/* Per-leg minute labels used to float over the map midpoints, but they were unanchored and
+          confusing ("17 min walk · 21 min" with no context). The full timed breakdown now lives in
+          the per-person hover itinerary (see the InfoWindow below) instead. */}
 
       {/* Pickup stops — green pins. Transit hubs get a TfNSW mode chip above the dot so the map
           answers "is this a train/bus/ferry/light-rail stop?" without needing the hover tooltip. */}
@@ -409,32 +397,21 @@ function PlanMapInner({
             </div>
             <div className="text-slate-600">{hovered.originAddress}</div>
             {hovered.role === "passenger" && hoveredLeg ? (
-              <div className="space-y-0.5 pt-1 text-slate-600">
-                <div>
-                  🚶 Walk to pickup:{" "}
-                  <span className="font-medium text-slate-800">
-                    {hoveredLeg.walkMins > 0 ? `${hoveredLeg.walkMins} min` : "—"}
-                  </span>
-                </div>
-                {hoveredLeg.ptMins > 0 ? (
-                  <div className="flex items-center gap-1">
-                    {transitStyle(hoveredLeg.mode) ? (
-                      <TransitBadge modality={hoveredLeg.mode} size={14} />
-                    ) : (
-                      <span>🚆</span>
-                    )}
-                    <span>
-                      {transitStyle(hoveredLeg.mode)?.name ?? "Public transport"}:
-                    </span>
-                    <span className="font-medium text-slate-800">
-                      {hoveredLeg.ptMins} min
-                    </span>
-                  </div>
-                ) : null}
-              </div>
+              <JourneyDetail leg={hoveredLeg} />
             ) : null}
             {hovered.role === "passenger" && !hoveredLeg ? (
               <div className="pt-1 italic text-slate-500">No pickup assigned yet</div>
+            ) : null}
+            {hovered.role === "driver" && hoveredDriverRoute ? (
+              <DriverDetail
+                route={hoveredDriverRoute}
+                destinationAddress={destination.address}
+                arriveBy={trip?.arriveBy}
+                participantsById={participantsById}
+              />
+            ) : null}
+            {hovered.role === "driver" && !hoveredDriverRoute ? (
+              <div className="pt-1 italic text-slate-500">No route assigned yet</div>
             ) : null}
           </div>
         </InfoWindow>
@@ -451,8 +428,313 @@ function PlanMapInner({
   );
 }
 
-function midpoint(a: LatLng, b: LatLng): LatLng {
-  return { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
+/** Format an ISO instant as a short Sydney clock time ("8:42 am"). The trip is always in Sydney, so
+ *  we pin the zone rather than using the viewer's locale — otherwise an instant like 22:45Z (8:45am
+ *  AEST) renders as the previous evening for anyone whose browser isn't on Sydney time. Null for
+ *  missing/invalid input so the itinerary can simply omit the time gutter for stub / pre-feature
+ *  legs. */
+function formatClock(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Australia/Sydney",
+  });
+}
+
+/** Pedestrian glyph (Material "directions_walk"), replacing the 🚶 emoji which rendered
+ *  inconsistently across platforms. Inherits `currentColor`; size via the `size` prop. */
+function WalkIcon({ size = 13, className }: { size?: number; className?: string }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="currentColor"
+      aria-hidden
+      className={className}
+    >
+      <path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9 7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.7 0-3.2-.9-4-2.3l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6z" />
+    </svg>
+  );
+}
+
+/** Car glyph (Material "directions_car") for the driver's driving legs. Inherits `currentColor`. */
+function CarIcon({ size = 13, className }: { size?: number; className?: string }): React.JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="currentColor"
+      aria-hidden
+      className={className}
+    >
+      <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11z" />
+    </svg>
+  );
+}
+
+/** Split an EFA route label into a compact chip code + descriptive name. EFA hands us values like
+ *  "T9 Northern Line", "M1 Metro North West & Bankstown Line", "L3 Kingsford Line", a bare bus
+ *  number ("392"), or a name with no code ("Central Coast & Newcastle Line"). We pull a leading
+ *  short code (letter(s)+digits, or pure digits) for the colour chip so a long line name never
+ *  overflows it; the remainder (or the mode name) becomes wrapping text beside the chip. */
+function splitRouteLabel(
+  routeShortName: string | undefined,
+  mode: string,
+): { code: string; name: string } {
+  const fallbackCode = legMark(mode) ?? "•";
+  if (!routeShortName) return { code: fallbackCode, name: legModeName(mode) };
+  const trimmed = routeShortName.trim();
+  const m = trimmed.match(/^([A-Za-z]{1,2}\d{1,3}[A-Za-z]?|\d{1,4})\b\s*(.*)$/);
+  if (m) {
+    const rest = m[2].trim();
+    return { code: m[1], name: rest || legModeName(mode) };
+  }
+  return { code: fallbackCode, name: trimmed };
+}
+
+/**
+ * Google-Maps-style timed itinerary for one passenger's home → pickup journey, shown in the hover
+ * InfoWindow. When the backend supplied per-leg detail (`pathLegs`), it renders a vertical timeline:
+ * each stop is a node with its scheduled clock time, and each connecting segment shows its mode
+ * (walk glyph or a TfNSW line chip), the line label, and the leg's minutes. Falls back to a compact
+ * walk/PT minute summary when only aggregate minutes are available (stub data, or candidate nodes
+ * generated before per-leg detail existed).
+ */
+function JourneyDetail({ leg }: { leg: PassengerLeg }): React.JSX.Element {
+  const total = leg.walkMins + leg.ptMins;
+  const legs = leg.pathLegs;
+
+  if (!legs || legs.length === 0) {
+    return (
+      <div className="space-y-0.5 pt-1 text-slate-600">
+        <div className="flex items-center gap-1">
+          <WalkIcon className="shrink-0 text-slate-500" />
+          <span>Walk to pickup:</span>
+          <span className="font-medium text-slate-800">
+            {leg.walkMins > 0 ? `${leg.walkMins} min` : "—"}
+          </span>
+        </div>
+        {leg.ptMins > 0 ? (
+          <div className="flex items-center gap-1">
+            {transitStyle(leg.mode) ? (
+              <TransitBadge modality={leg.mode} size={14} />
+            ) : (
+              <span>🚆</span>
+            )}
+            <span>{transitStyle(leg.mode)?.name ?? "Public transport"}:</span>
+            <span className="font-medium text-slate-800">{leg.ptMins} min</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  const depart = formatClock(legs[0].departureTime);
+  const arrive = formatClock(legs[legs.length - 1].arrivalTime);
+
+  // Node i is the stop leg i departs from; the trailing node (i === legs.length) is the pickup.
+  // A node's clock time is the previous leg's arrival (or, for the first node, leg 0's departure).
+  const nodeTime = (i: number): string | null => {
+    if (i === 0) return formatClock(legs[0].departureTime);
+    if (i >= legs.length) return formatClock(legs[legs.length - 1].arrivalTime);
+    return formatClock(legs[i - 1].arrivalTime) ?? formatClock(legs[i].departureTime);
+  };
+  const nodeName = (i: number): string => {
+    if (i === 0) return legs[0].fromName ?? "Home";
+    if (i >= legs.length) return legs[legs.length - 1].toName ?? "Pickup point";
+    return legs[i].fromName ?? legs[i - 1].toName ?? "Stop";
+  };
+
+  return (
+    <div className="pt-1" style={{ minWidth: 215, maxWidth: 270 }}>
+      <div className="mb-1.5 flex items-center justify-between border-b border-slate-200 pb-1 text-[11px]">
+        <span className="font-semibold text-slate-800">
+          {depart && arrive ? `${depart} – ${arrive}` : "Journey to pickup"}
+        </span>
+        {total > 0 ? <span className="text-slate-500">{total} min</span> : null}
+      </div>
+
+      {legs.map((seg, i) => {
+        const style = legStyle(seg.mode);
+        const { code, name } = splitRouteLabel(seg.routeShortName, seg.mode);
+        const dur = seg.durationMins ? ` · ${seg.durationMins} min` : "";
+        return (
+          <div key={i} className="flex gap-2">
+            <div className="w-9 shrink-0 pt-px text-right text-[10px] tabular-nums leading-tight text-slate-500">
+              {nodeTime(i) ?? ""}
+            </div>
+            <div className="flex flex-col items-center">
+              <span
+                className="mt-px h-2 w-2 shrink-0 rounded-full ring-2 ring-white"
+                style={{ backgroundColor: style.color }}
+              />
+              <span
+                className="w-0.5 grow rounded"
+                style={{ backgroundColor: style.color, minHeight: 18, opacity: 0.45 }}
+              />
+            </div>
+            <div className="min-w-0 flex-1 pb-2 text-[11px] leading-tight">
+              <div className="font-medium text-slate-800">{nodeName(i)}</div>
+              <div className="mt-0.5 flex items-start gap-1 text-slate-600">
+                {style.isWalk ? (
+                  <WalkIcon className="mt-px shrink-0 text-slate-500" />
+                ) : (
+                  <span
+                    className="mt-px inline-flex shrink-0 items-center justify-center rounded-[3px] px-1 py-px text-[9px] font-bold leading-none text-white"
+                    style={{ backgroundColor: style.color }}
+                  >
+                    {code}
+                  </span>
+                )}
+                <span className="min-w-0 break-words">
+                  {style.isWalk ? `Walk${dur}` : `${name}${dur}`}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Final pickup node — green to match the map's pickup pins. */}
+      <div className="flex gap-2">
+        <div className="w-9 shrink-0 pt-px text-right text-[10px] tabular-nums leading-tight text-slate-500">
+          {nodeTime(legs.length) ?? ""}
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="mt-px h-2.5 w-2.5 shrink-0 rounded-full bg-[#34A853] ring-2 ring-white" />
+        </div>
+        <div className="flex-1 text-[11px] leading-tight">
+          <div className="font-medium text-slate-800">{nodeName(legs.length)}</div>
+          <div className="mt-0.5 text-slate-500">{leg.driverName} picks up here</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Driving itinerary for a hovered driver — the same vertical timeline as the passenger view, but
+ * tracing the car: Home → each pickup stop (with who's collected there and the scheduled arrival)
+ * → destination. Drive segments are drawn in the driver's route colour.
+ */
+function DriverDetail({
+  route,
+  destinationAddress,
+  arriveBy,
+  participantsById,
+}: {
+  route: SolutionRoute;
+  destinationAddress: string;
+  arriveBy?: string;
+  participantsById: Record<string, Participant>;
+}): React.JSX.Element {
+  const colour = route.colour;
+  // Prefer the backend's estimated destination arrival — the timeline is anchored so the driver
+  // lands a few minutes before the target rather than idling. Fall back to the trip's target
+  // arriveBy only when it's missing, since arriveBy is the goal, not the ETA.
+  const arrive = formatClock(route.destinationArrival) ?? formatClock(arriveBy);
+  // When the driver leaves home — surfaced so the timeline reads depart → pickups → arrive.
+  const depart = formatClock(route.departure);
+
+  const stops = route.stops.map((s) => ({
+    time: formatClock(s.arriveAt),
+    kind: s.nodeKind,
+    names: s.pickupLegs
+      .map((l) => participantsById[l.participantId]?.displayName)
+      .filter((n): n is string => Boolean(n)),
+  }));
+
+  const driveLeg = (
+    <div className="mt-0.5 flex items-center gap-1 text-slate-600">
+      <span className="shrink-0" style={{ color: colour }}>
+        <CarIcon />
+      </span>
+      <span>Drive</span>
+    </div>
+  );
+  const dot = (
+    <span
+      className="mt-px h-2 w-2 shrink-0 rounded-full ring-2 ring-white"
+      style={{ backgroundColor: colour }}
+    />
+  );
+  const rail = (
+    <span
+      className="w-0.5 grow rounded"
+      style={{ backgroundColor: colour, minHeight: 18, opacity: 0.45 }}
+    />
+  );
+
+  return (
+    <div className="pt-1" style={{ minWidth: 215, maxWidth: 270 }}>
+      <div className="mb-1.5 flex items-center justify-between border-b border-slate-200 pb-1 text-[11px]">
+        <span className="font-semibold text-slate-800">
+          {depart && arrive
+            ? `Departs ${depart} · Arrives ${arrive}`
+            : arrive
+              ? `Arrives ${arrive}`
+              : "Driving route"}
+        </span>
+        <span className="shrink-0 pl-2 text-slate-500">{Math.round(route.drivingMinutes)} min driving</span>
+      </div>
+
+      {/* Home */}
+      <div className="flex gap-2">
+        <div className="w-9 shrink-0 pt-px text-right text-[10px] tabular-nums leading-tight text-slate-500">
+          {depart ?? ""}
+        </div>
+        <div className="flex flex-col items-center">
+          {dot}
+          {rail}
+        </div>
+        <div className="min-w-0 flex-1 pb-2 text-[11px] leading-tight">
+          <div className="font-medium text-slate-800">Home</div>
+          {driveLeg}
+        </div>
+      </div>
+
+      {/* Pickup stops */}
+      {stops.map((s, i) => (
+        <div key={i} className="flex gap-2">
+          <div className="w-9 shrink-0 pt-px text-right text-[10px] tabular-nums leading-tight text-slate-500">
+            {s.time ?? ""}
+          </div>
+          <div className="flex flex-col items-center">
+            {dot}
+            {rail}
+          </div>
+          <div className="min-w-0 flex-1 pb-2 text-[11px] leading-tight">
+            <div className="flex items-center gap-1 font-medium text-slate-800">
+              {transitStyle(s.kind) ? <TransitBadge modality={s.kind} size={13} /> : null}
+              <span className="min-w-0 break-words">
+                {s.names.length > 0 ? `Pick up ${s.names.join(", ")}` : "Pickup"}
+              </span>
+            </div>
+            {driveLeg}
+          </div>
+        </div>
+      ))}
+
+      {/* Destination */}
+      <div className="flex gap-2">
+        <div className="w-9 shrink-0 pt-px text-right text-[10px] tabular-nums leading-tight text-slate-500">
+          {arrive ?? ""}
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="mt-px h-2.5 w-2.5 shrink-0 rounded-full bg-[#EA4335] ring-2 ring-white" />
+        </div>
+        <div className="min-w-0 flex-1 text-[11px] leading-tight">
+          <div className="font-medium text-slate-800">Destination</div>
+          <div className="mt-0.5 break-words text-slate-500">{destinationAddress}</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Linearly interpolate along the home→pickup line at the walk/PT minute ratio so the dashed

@@ -70,6 +70,8 @@ public sealed class CachingDecoratorTests
         leg.Polyline!.Should().HaveCount(3);
         leg.Polyline![1].X.Should().BeApproximately(151.24, 1e-9);
         leg.Polyline![1].Y.Should().BeApproximately(-33.88, 1e-9);
+        leg.DepartureTime.Should().Be(new DateTimeOffset(2025, 1, 15, 8, 5, 0, TimeSpan.Zero));
+        leg.ArrivalTime.Should().Be(new DateTimeOffset(2025, 1, 15, 8, 17, 0, TimeSpan.Zero));
     }
 
     [Fact]
@@ -269,7 +271,9 @@ public sealed class CachingDecoratorTests
                 Geom.CreatePoint(new Coordinate(151.2503, -33.8918)),
             };
             var leg = new TfNswJourneyLeg("train", 12, origin, destination, "T4",
-                FromName: "Town Hall", ToName: "Bondi Junction", Polyline: polyline);
+                FromName: "Town Hall", ToName: "Bondi Junction", Polyline: polyline,
+                DepartureTime: new DateTimeOffset(2025, 1, 15, 8, 5, 0, TimeSpan.Zero),
+                ArrivalTime: new DateTimeOffset(2025, 1, 15, 8, 17, 0, TimeSpan.Zero));
             return Task.FromResult(new TfNswTripPlan(new[] { leg }, 0, 12));
         }
 

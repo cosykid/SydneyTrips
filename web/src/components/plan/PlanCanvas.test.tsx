@@ -54,6 +54,17 @@ const trip: TripDetailDto = {
         },
       ],
     },
+    {
+      id: "p-2",
+      tripId: "trip-1",
+      displayName: "Blair",
+      homeLongitude: 151.24,
+      homeLatitude: -33.88,
+      hasCar: false,
+      seats: 0,
+      preferences: { walkBudgetMins: 15, detourToleranceMins: 10, fairnessWeight: 1 },
+      candidateNodes: [],
+    },
   ],
 };
 
@@ -86,7 +97,28 @@ const runResponse = {
         driverId: "p-1",
         travelMins: 42,
         orderIndex: 0,
-        stops: [],
+        destinationArrival: new Date("2026-06-01T09:50:00Z").toISOString(),
+        departure: new Date("2026-06-01T09:08:00Z").toISOString(),
+        stops: [
+          {
+            id: "stop-1",
+            orderIndex: 0,
+            longitude: 151.21,
+            latitude: -33.87,
+            candidateNodeId: "n-1",
+            nodeKind: "busStop",
+            estimatedArrival: new Date("2026-06-01T09:20:00Z").toISOString(),
+            pickups: [
+              {
+                participantId: "p-2",
+                walkMins: 5,
+                ptMins: 12,
+                path: null,
+                pathLegs: null,
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -152,8 +184,13 @@ describe("PlanCanvas", () => {
 
     await waitFor(() => expect(screen.getByTestId("solution-panel")).toBeInTheDocument());
     // "42 min" also appears as "Longest single drive" (one route), so anchor on the label.
-    const totalDriving = screen.getByText("Total driving").parentElement!;
-    expect(within(totalDriving).getByText(/42 min/)).toBeInTheDocument();
+    const longestDrive = screen.getByText("Longest single drive").parentElement!;
+    expect(within(longestDrive).getByText(/42 min/)).toBeInTheDocument();
+    const longestJourney = screen.getByText("Longest journey").parentElement!;
+    expect(within(longestJourney).getByText(/Blair · 47 min/)).toBeInTheDocument();
+    expect(screen.queryByText("Total driving")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total walking")).not.toBeInTheDocument();
+    expect(screen.queryByText("Longest walk")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Re-plan$/i })).toBeInTheDocument();
   });
 });

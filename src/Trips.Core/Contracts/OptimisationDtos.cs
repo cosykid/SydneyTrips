@@ -47,7 +47,20 @@ public sealed record DriverRouteDto(
     Guid DriverId,
     double TravelMins,
     int OrderIndex,
-    IReadOnlyList<StopDto> Stops);
+    IReadOnlyList<StopDto> Stops,
+    /// <summary>Estimated clock time the driver reaches the destination, on the same timeline as each
+    /// <see cref="StopDto.EstimatedArrival"/>. Anchored backwards from the trip's arrival target so the
+    /// driver lands a few minutes early instead of leaving at the scheduled <c>DepartAt</c> and idling
+    /// (see <see cref="Departure"/>). Null when the solution is mapped without its trip (no window to
+    /// anchor on); the FE then omits the destination clock. Computed at map time — not persisted.</summary>
+    DateTimeOffset? DestinationArrival = null,
+    /// <summary>Estimated clock time the driver leaves home — <c>DestinationArrival − TravelMins</c>.
+    /// Rather than depart at the scheduled <c>DepartAt</c> (which is set well before the arrival window
+    /// and made drivers arrive far too early), the displayed timeline slides later so the driver leaves
+    /// just-in-time. Never earlier than <c>DepartAt</c>: when the window is too tight to reach on time
+    /// it pins to <c>DepartAt</c> and the driver arrives as early as the drive allows. Null when mapped
+    /// without its trip. Computed at map time — not persisted.</summary>
+    DateTimeOffset? Departure = null);
 
 public sealed record StopDto(
     Guid Id,
@@ -82,5 +95,18 @@ public sealed record PickupLegDto(
     IReadOnlyList<PathLegDto>? PathLegs = null);
 
 /// <summary>One mode-tagged segment of a passenger's home→pickup journey. <see cref="Mode"/> is the
-/// raw TfNSW mode string ("walk", "train", "metro", "bus", "ferry", "lightrail", "unknown").</summary>
-public sealed record PathLegDto(string Mode, PathDto Path);
+/// raw TfNSW mode string ("walk", "train", "metro", "bus", "ferry", "lightrail", "unknown"). The
+/// remaining fields drive the planner's Google-Maps-style timed itinerary on hover:
+/// <see cref="DurationMins"/> is the leg's travel time; <see cref="FromName"/>/<see cref="ToName"/>
+/// are the stop names; <see cref="RouteShortName"/> is the line label; <see cref="DepartureTime"/>/
+/// <see cref="ArrivalTime"/> are the scheduled clock times. All default so stub / pre-feature data
+/// still serialises — the FE renders whatever's present.</summary>
+public sealed record PathLegDto(
+    string Mode,
+    PathDto Path,
+    int DurationMins = 0,
+    string? FromName = null,
+    string? ToName = null,
+    string? RouteShortName = null,
+    DateTimeOffset? DepartureTime = null,
+    DateTimeOffset? ArrivalTime = null);

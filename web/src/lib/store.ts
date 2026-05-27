@@ -11,7 +11,7 @@ export interface MapViewState {
   zoom: number;
 }
 
-export type PlanTab = "fastest" | "fewest_stops" | "least_walking";
+export type PlanTab = "fastest" | "fewest_stops" | "least_transit";
 
 interface TripPlanSlice {
   runId?: string;

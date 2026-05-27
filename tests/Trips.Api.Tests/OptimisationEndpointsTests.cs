@@ -82,7 +82,7 @@ public sealed class OptimisationEndpointsTests : IAsyncLifetime
         var pareto = await client.GetFromJsonAsync<SolutionDto[]>($"/trips/{trip.Id}/runs/{enq.RunId}/pareto");
         Assert.NotNull(pareto);
         pareto.Should().HaveCount(3);
-        pareto.Select(p => p.Label).Should().BeEquivalentTo(new[] { "fastest", "fewest-stops", "least-walking" });
+        pareto.Select(p => p.Label).Should().BeEquivalentTo(new[] { "fastest", "fewest-stops", "least-transit" });
     }
 
     [Fact]

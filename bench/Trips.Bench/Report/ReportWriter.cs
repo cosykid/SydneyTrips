@@ -96,7 +96,7 @@ public sealed class ReportWriter
         sb.AppendLine("- **OR-Tools obj** is the best objective found by the CP-SAT model within the wall-clock budget. If OR-Tools terminates with `Optimal` status it is *the* optimum; otherwise it's just a feasible upper bound.");
         sb.AppendLine("- **Heuristic obj** is the best objective from cheapest-insertion construction + simulated-annealing local search.");
         sb.AppendLine("- **Gap %** is `(heur − ortools) / ortools × 100`. Negative means the heuristic beat OR-Tools' best-found (only possible when OR-Tools timed out before reaching optimal).");
-        sb.AppendLine("- **Obj** is a weighted sum of five terms — drive, stops, walk+PT, arrival-spread, fairness — using `ObjectiveWeights.Balanced`. The two solvers use the *exact same* `ObjectiveEvaluator` so the values are directly comparable.");
+        sb.AppendLine("- **Obj** is a weighted sum of five terms — drive, stops, PT-access time, arrival-spread, fairness — using `ObjectiveWeights.Balanced`. The two solvers use the *exact same* `ObjectiveEvaluator` so the values are directly comparable.");
         sb.AppendLine();
         sb.AppendLine("Travel times are synthetic: haversine × 1.25 congestion multiplier. The bench does not call the real Google Routes API — see `InstanceGenerator.cs` for the model.");
         sb.AppendLine();
@@ -139,13 +139,13 @@ public sealed class ReportWriter
         {
             sb.AppendLine($"### {label}: {res.Instance.ClassLabel} seed={res.Instance.Seed} → {res.Instance.DestinationName}");
             sb.AppendLine();
-            sb.AppendLine($"**OR-Tools** objective={res.OrToolsObjective:F2} terms=[drive={res.OrToolsTerms[0]:F2}, stops={res.OrToolsTerms[1]:F2}, walk={res.OrToolsTerms[2]:F2}, spread={res.OrToolsTerms[3]:F2}, fair={res.OrToolsTerms[4]:F2}] ms={res.OrToolsRuntimeMs}");
+            sb.AppendLine($"**OR-Tools** objective={res.OrToolsObjective:F2} terms=[drive={res.OrToolsTerms[0]:F2}, stops={res.OrToolsTerms[1]:F2}, pt_access={res.OrToolsTerms[2]:F2}, spread={res.OrToolsTerms[3]:F2}, fair={res.OrToolsTerms[4]:F2}] ms={res.OrToolsRuntimeMs}");
             sb.AppendLine();
             sb.AppendLine("```mermaid");
             sb.AppendLine(RenderMermaid(res.OrToolsSolution, res.Instance, prefix: "ort"));
             sb.AppendLine("```");
             sb.AppendLine();
-            sb.AppendLine($"**Heuristic** objective={res.HeuristicObjective:F2} terms=[drive={res.HeuristicTerms[0]:F2}, stops={res.HeuristicTerms[1]:F2}, walk={res.HeuristicTerms[2]:F2}, spread={res.HeuristicTerms[3]:F2}, fair={res.HeuristicTerms[4]:F2}] ms={res.HeuristicRuntimeMs} iters={res.HeuristicIterations:N0}");
+            sb.AppendLine($"**Heuristic** objective={res.HeuristicObjective:F2} terms=[drive={res.HeuristicTerms[0]:F2}, stops={res.HeuristicTerms[1]:F2}, pt_access={res.HeuristicTerms[2]:F2}, spread={res.HeuristicTerms[3]:F2}, fair={res.HeuristicTerms[4]:F2}] ms={res.HeuristicRuntimeMs} iters={res.HeuristicIterations:N0}");
             sb.AppendLine();
             sb.AppendLine("```mermaid");
             sb.AppendLine(RenderMermaid(res.HeuristicSolution, res.Instance, prefix: "heur"));

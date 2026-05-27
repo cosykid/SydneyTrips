@@ -112,9 +112,12 @@ public class EdgeCaseTests
 
         var or = new OrToolsSolver(new SolverOptions(TimeBudgetMs: 2_000), Microsoft.Extensions.Logging.Abstractions.NullLogger<OrToolsSolver>.Instance);
         var sol = await or.SolveAsync(input, default);
-        // Driver has 0 stops; objective is 0.
         Assert.Single(sol.Routes);
-        Assert.Empty(sol.Routes[0].Stops);
+        Assert.Empty(sol.Routes[0].Stops);              // driver picks up nobody
+        // Fairness now measures extra pickup burden, so a driver carrying no passengers contributes
+        // zero objective cost even though the displayed route still shows their solo drive.
         Assert.Equal(0.0, sol.Objective, 2);
+        // The displayed route also shows that solo drive (10), not a 0-minute teleport.
+        Assert.Equal(10.0, sol.Routes[0].TravelMins, 2);
     }
 }

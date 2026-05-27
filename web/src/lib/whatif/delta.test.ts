@@ -18,6 +18,8 @@ function solution(stops: Array<{ id?: string; lat: number; lng: number; pax: str
       totalStops: stops.length,
       totalWalkMetres: 500,
       maxWalkMetres: 300,
+      maxJourneyMinutes: 35,
+      maxJourneyParticipantName: "Driver",
       fairnessIndex: 0.8,
     },
     routes: [

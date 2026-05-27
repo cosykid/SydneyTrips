@@ -31,8 +31,10 @@ public sealed record TfNswTripPlan(IReadOnlyList<TfNswJourneyLeg> Legs, int Tota
 /// One leg of a TfNSW journey. <paramref name="FromName"/>/<paramref name="ToName"/> are the
 /// human-readable stop names at each end (e.g. "Town Hall Station, Sydney"). <paramref name="Polyline"/>
 /// is the leg's actual path geometry — a sequence of NTS Points (X=lng, Y=lat) — so the UI can
-/// draw the real PT route instead of a straight crow-fly line. All three default to null for
-/// backwards compatibility with tests / stubs that don't care.
+/// draw the real PT route instead of a straight crow-fly line. <paramref name="DepartureTime"/>/
+/// <paramref name="ArrivalTime"/> are the EFA-scheduled clock times this leg leaves its origin and
+/// reaches its destination, so the UI can render a Google-Maps-style timed itinerary. Every optional
+/// field defaults to null for backwards compatibility with tests / stubs that don't care.
 /// </summary>
 public sealed record TfNswJourneyLeg(
     string Mode,
@@ -42,7 +44,9 @@ public sealed record TfNswJourneyLeg(
     string? RouteShortName,
     string? FromName = null,
     string? ToName = null,
-    IReadOnlyList<Point>? Polyline = null);
+    IReadOnlyList<Point>? Polyline = null,
+    DateTimeOffset? DepartureTime = null,
+    DateTimeOffset? ArrivalTime = null);
 
 /// <summary>One coordinate-request hit — a stop or station near a point.</summary>
 public sealed record TfNswCoordinateStop(string StopId, string Name, Point Location, int DistanceMeters, string Mode);

@@ -184,21 +184,38 @@ interface OptimiseVars {
  * Translate the FE's user-friendly weight names to the wire shape the API expects.
  *
  * Without this mapping every slider but Fair sharing is silently ignored: the FE was sending
- * `drivingTime`/`stops`/`walking` but ObjectiveWeightsDto on the backend expects
+ * `driverBias`/`stops`/`fairness` but ObjectiveWeightsDto on the backend expects
  * `driveTime`/`stopCount`/`walkAndPt`. ASP.NET's JSON binder zeroes any field it doesn't
  * recognise, so the solver received all-zero weights and every slider movement was a no-op.
+ *
+ * The UI intentionally has one compromise dial for driving vs public transport. Higher values
+ * penalize driver minutes more; lower values penalize passenger PT-access minutes more. We apply
+ * a small odds multiplier on the driver side so the visual midpoint already leans slightly toward
+ * asking passengers to use PT instead of making drivers absorb more road time.
  *
  * `arrivalSpread` isn't surfaced as a slider — kept at 0, matching the BE presets used in
  * the integration-test fixture.
  */
 function toApiWeights(w: OptimiseRequest["weights"]): components["schemas"]["ObjectiveWeightsDto"] {
+  const driverBias = driverWeightFromBalance(w.driverBias);
   return {
-    driveTime: w.drivingTime,
+    driveTime: driverBias,
     stopCount: w.stops,
-    walkAndPt: w.walking,
+    walkAndPt: 1 - driverBias,
     arrivalSpread: 0,
     fairness: w.fairness,
   };
+}
+
+const DRIVER_BIAS_ODDS_MULTIPLIER = 2.0;
+
+function driverWeightFromBalance(value: number): number {
+  const balance = Math.min(1, Math.max(0, value));
+  if (balance === 0 || balance === 1) return balance;
+
+  const driverOdds = balance * DRIVER_BIAS_ODDS_MULTIPLIER;
+  const passengerOdds = 1 - balance;
+  return driverOdds / (driverOdds + passengerOdds);
 }
 
 export function useOptimise(): UseMutationResult<{ runId: Uuid }, ApiError, OptimiseVars> {

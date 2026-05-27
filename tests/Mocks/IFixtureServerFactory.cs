@@ -20,6 +20,9 @@ public interface IMockServerSet : IDisposable
     string GoogleBaseUrl { get; }
     string GoogleGeocodingBaseUrl { get; }
     string NominatimBaseUrl { get; }
+
+    /// <summary>Trip-plan request URLs the TfNSW mock has received — for asserting query formatting.</summary>
+    IReadOnlyList<string> TfNswTripPlanRequests();
 }
 
 /// <summary>
@@ -60,6 +63,8 @@ public sealed class FixtureServerFactory : IFixtureServerFactory
         public string GoogleBaseUrl => _google.BaseUrl;
         public string GoogleGeocodingBaseUrl => _google.GeocodingBaseUrl;
         public string NominatimBaseUrl => _nominatim.BaseUrl;
+
+        public IReadOnlyList<string> TfNswTripPlanRequests() => _tfnsw.TripPlanRequestUrls();
 
         public void Dispose()
         {

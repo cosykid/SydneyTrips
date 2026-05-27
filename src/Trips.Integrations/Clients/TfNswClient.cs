@@ -45,6 +45,15 @@ internal sealed class TfNswClient : ITfNswClient
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// EFA's <c>itdDate</c>/<c>itdTime</c> are interpreted as <em>Sydney local</em> wall-clock time,
+    /// not UTC. Our <see cref="DateTimeOffset"/> inputs are stored in UTC, so they must be converted
+    /// to this zone before formatting — otherwise a journey meant for, say, 08:45 Sydney gets sent as
+    /// "2245" and EFA plans a 10:45pm trip instead (off by the AEST/AEDT offset).
+    /// </summary>
+    private static readonly TimeZoneInfo SydneyTimeZone =
+        TimeZoneInfo.FindSystemTimeZoneById("Australia/Sydney");
+
     private readonly HttpClient _http;
     private readonly TfNswOptions _options;
     private readonly ILogger<TfNswClient> _logger;
@@ -65,12 +74,14 @@ internal sealed class TfNswClient : ITfNswClient
         ArgumentNullException.ThrowIfNull(origin);
         ArgumentNullException.ThrowIfNull(destination);
 
+        // EFA reads itdDate/itdTime as Sydney local time — convert from our UTC instant first.
+        var departLocal = TimeZoneInfo.ConvertTime(departAt, SydneyTimeZone);
         var qs = new QueryStringBuilder()
             .Add("outputFormat", "rapidJSON")
             .Add("coordOutputFormat", "EPSG:4326")
             .Add("depArrMacro", "dep")
-            .Add("itdDate", departAt.ToString("yyyyMMdd", CultureInfo.InvariantCulture))
-            .Add("itdTime", departAt.ToString("HHmm", CultureInfo.InvariantCulture))
+            .Add("itdDate", departLocal.ToString("yyyyMMdd", CultureInfo.InvariantCulture))
+            .Add("itdTime", departLocal.ToString("HHmm", CultureInfo.InvariantCulture))
             .Add("type_origin", "coord")
             .Add("name_origin", $"{origin.X.ToString(CultureInfo.InvariantCulture)}:{origin.Y.ToString(CultureInfo.InvariantCulture)}:EPSG:4326")
             .Add("type_destination", "coord")
@@ -146,12 +157,14 @@ internal sealed class TfNswClient : ITfNswClient
     {
         ArgumentException.ThrowIfNullOrEmpty(stopId);
 
+        // EFA reads itdDate/itdTime as Sydney local time — convert from our UTC instant first.
+        var fromLocal = TimeZoneInfo.ConvertTime(from, SydneyTimeZone);
         var qs = new QueryStringBuilder()
             .Add("outputFormat", "rapidJSON")
             .Add("type_dm", "stop")
             .Add("name_dm", stopId)
-            .Add("itdDate", from.ToString("yyyyMMdd", CultureInfo.InvariantCulture))
-            .Add("itdTime", from.ToString("HHmm", CultureInfo.InvariantCulture))
+            .Add("itdDate", fromLocal.ToString("yyyyMMdd", CultureInfo.InvariantCulture))
+            .Add("itdTime", fromLocal.ToString("HHmm", CultureInfo.InvariantCulture))
             .Add("mode", "direct")
             .Add("useRealtime", "true")
             .Build();
@@ -272,6 +285,9 @@ internal sealed class TfNswClient : ITfNswClient
                 var from = LegPoint(leg.Origin);
                 var to = LegPoint(leg.Destination);
                 var polyline = LegPolyline(leg.Coords);
+                // Prefer realtime estimates over the published timetable when EFA supplies both.
+                var departureTime = leg.Origin?.DepartureTimeEstimated ?? leg.Origin?.DepartureTimePlanned;
+                var arrivalTime = leg.Destination?.ArrivalTimeEstimated ?? leg.Destination?.ArrivalTimePlanned;
                 legs.Add(new TfNswJourneyLeg(
                     mode,
                     minutes,
@@ -280,7 +296,9 @@ internal sealed class TfNswClient : ITfNswClient
                     leg.Transportation?.Number,
                     FromName: leg.Origin?.Name,
                     ToName: leg.Destination?.Name,
-                    Polyline: polyline));
+                    Polyline: polyline,
+                    DepartureTime: departureTime,
+                    ArrivalTime: arrivalTime));
             }
         }
 
@@ -480,6 +498,12 @@ internal sealed class TfNswClient : ITfNswClient
     {
         public string? Name { get; set; }
         public List<double>? Coord { get; set; }
+        // EFA tags every stop with both the timetable time and (when available) a realtime estimate.
+        // For a leg's origin we read the departure pair; for its destination, the arrival pair.
+        public DateTimeOffset? DepartureTimePlanned { get; set; }
+        public DateTimeOffset? DepartureTimeEstimated { get; set; }
+        public DateTimeOffset? ArrivalTimePlanned { get; set; }
+        public DateTimeOffset? ArrivalTimeEstimated { get; set; }
     }
 
     private sealed class TransportationDto

@@ -66,6 +66,71 @@ public sealed class SolutionPickupPathMappingTests
         legB.PtMins.Should().Be(39);
     }
 
+    [Fact]
+    public void Timeline_slides_late_so_the_driver_arrives_just_before_the_target()
+    {
+        // DepartAt is set well before the window, so a forward-from-DepartAt timeline made the driver
+        // arrive ~40 min early and idle. The DTO slides the whole route later: the driver leaves
+        // just-in-time and lands ArrivalSlack (5 min) before the target. Departure, destination ETA,
+        // and every stop ETA all move by the same shift so the itinerary stays coherent.
+        var departAt = new DateTimeOffset(2026, 5, 28, 9, 0, 0, TimeSpan.Zero);
+        var target = departAt.AddHours(1); // 10:00
+        var trip = new Trip(Guid.NewGuid(), "T", new Destination("Dest", Pt(151.01, -33.78)),
+            departAt,
+            new ArrivalWindow(target, target),
+            Guid.NewGuid(), DateTimeOffset.UtcNow);
+
+        var stop = new Stop(Guid.NewGuid(), Guid.NewGuid(), 0, Pt(151.09, -33.81), Guid.Empty,
+            departAt.AddMinutes(13), Array.Empty<Guid>());
+        var route = new DriverRoute(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 17.0, 0, new[] { stop });
+        var solution = new Solution(Guid.NewGuid(), Guid.NewGuid(), "OR-Tools", 1.0, new[] { 0.0 }, new[] { route });
+
+        var r = solution.ToDto(trip).Routes[0];
+
+        // shift = (10:00 − 5 min − 9:00) − 17 min = 55 − 17 = 38 min.
+        r.DestinationArrival.Should().Be(target.AddMinutes(-5)); // 9:55, 5 min before the target.
+        r.Departure.Should().Be(target.AddMinutes(-5 - 17));     // 9:38 = arrival − driving.
+        r.Stops[0].EstimatedArrival.Should().Be(departAt.AddMinutes(13 + 38)); // 9:51, shifted with the rest.
+    }
+
+    [Fact]
+    public void A_window_too_tight_to_reach_keeps_the_earliest_possible_timing()
+    {
+        // When the driver can't reach the target even leaving at DepartAt, the shift pins to zero:
+        // depart at DepartAt and arrive as early as the drive allows, rather than inventing a
+        // departure earlier than the trip's scheduled start.
+        var departAt = new DateTimeOffset(2026, 5, 28, 9, 0, 0, TimeSpan.Zero);
+        var target = departAt.AddMinutes(10); // only 10 min of slack for a 17-min drive
+        var trip = new Trip(Guid.NewGuid(), "T", new Destination("Dest", Pt(151.01, -33.78)),
+            departAt,
+            new ArrivalWindow(target, target),
+            Guid.NewGuid(), DateTimeOffset.UtcNow);
+
+        var stop = new Stop(Guid.NewGuid(), Guid.NewGuid(), 0, Pt(151.09, -33.81), Guid.Empty,
+            departAt.AddMinutes(13), Array.Empty<Guid>());
+        var route = new DriverRoute(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 17.0, 0, new[] { stop });
+        var solution = new Solution(Guid.NewGuid(), Guid.NewGuid(), "OR-Tools", 1.0, new[] { 0.0 }, new[] { route });
+
+        var r = solution.ToDto(trip).Routes[0];
+
+        r.Departure.Should().Be(departAt);                          // no slide — leave on schedule.
+        r.DestinationArrival.Should().Be(departAt.AddMinutes(17));   // arrive as soon as the drive ends.
+        r.Stops[0].EstimatedArrival.Should().Be(departAt.AddMinutes(13)); // unshifted.
+    }
+
+    [Fact]
+    public void Departure_and_destination_arrival_are_null_without_a_trip_to_anchor_on()
+    {
+        var stop = new Stop(Guid.NewGuid(), Guid.NewGuid(), 0, Pt(151.09, -33.81), Guid.Empty,
+            DateTimeOffset.UtcNow, Array.Empty<Guid>());
+        var route = new DriverRoute(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 17.0, 0, new[] { stop });
+        var solution = new Solution(Guid.NewGuid(), Guid.NewGuid(), "OR-Tools", 1.0, new[] { 0.0 }, new[] { route });
+
+        var r = solution.ToDto().Routes[0];
+        r.DestinationArrival.Should().BeNull();
+        r.Departure.Should().BeNull();
+    }
+
     private static void Attach(Trip trip, Participant p)
     {
         var field = typeof(Trip).GetField("_participants", BindingFlags.NonPublic | BindingFlags.Instance)!;

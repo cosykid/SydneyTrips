@@ -81,11 +81,21 @@ public static class SolutionBuilder
             }
             cursorMins += input.TravelMatrix[prev, destinationNodeIndex];
 
+            // An idle driver (no pickups) still has to get themselves to the destination. The
+            // objective's travel/fairness terms score them as free so the solver never activates a
+            // car it doesn't need (see ObjectiveEvaluator's fairness note) — but the *plan* should
+            // show the solo home→destination drive they actually make, not a 0-minute teleport. So
+            // for an empty route we display the direct drive; active drivers keep the evaluator's figure
+            // (which equals the same accumulated cursorMins for a loaded route).
+            var travelMins = stops.Count == 0
+                ? input.TravelMatrix[driver.OriginNodeIndex, destinationNodeIndex]
+                : eval.DriverTravelMins[d];
+
             routes.Add(new DriverRoute(
                 id: routeId,
                 solutionId: Guid.Empty,
                 driverId: driver.ParticipantId,
-                travelMins: eval.DriverTravelMins[d],
+                travelMins: travelMins,
                 orderIndex: d,
                 stops: stops));
         }

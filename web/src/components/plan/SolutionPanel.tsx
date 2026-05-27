@@ -59,14 +59,15 @@ export function SolutionPanel({
 
 function SolutionMetrics({ solution }: { solution: Solution }): React.JSX.Element {
   const m = solution.metrics;
+  const longestJourney = m.maxJourneyParticipantName
+    ? `${m.maxJourneyParticipantName} · ${m.maxJourneyMinutes.toFixed(0)} min`
+    : `${m.maxJourneyMinutes.toFixed(0)} min`;
   return (
     <div className="rounded-md border p-3 text-xs">
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-        <Metric label="Total driving" value={`${m.totalDrivingMinutes.toFixed(0)} min`} />
         <Metric label="Longest single drive" value={`${m.maxDrivingMinutes.toFixed(0)} min`} />
         <Metric label="Total stops" value={m.totalStops.toString()} />
-        <Metric label="Longest walk" value={`${m.maxWalkMetres.toFixed(0)} m`} />
-        <Metric label="Total walking" value={`${m.totalWalkMetres.toFixed(0)} m`} />
+        <Metric label="Longest journey" value={longestJourney} />
         <FairnessIndicator value={m.fairnessIndex} />
       </dl>
       <div className="mt-3 flex flex-wrap gap-1.5 border-t pt-2">
@@ -107,7 +108,7 @@ function FairnessIndicator({ value }: { value: number }): React.JSX.Element {
   ];
   return (
     <div>
-      <dt className="text-muted-foreground text-[10px] uppercase tracking-wider">Driver fairness</dt>
+      <dt className="text-muted-foreground text-[10px] uppercase tracking-wider">Drive balance</dt>
       <dd className="mt-0.5 flex items-center gap-1.5">
         <div className="flex gap-0.5">
           {segments.map((seg, i) => (

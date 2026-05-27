@@ -7,10 +7,10 @@ using Trips.Optimisation.Tests.Helpers;
 namespace Trips.Optimisation.Tests;
 
 /// <summary>
-/// Locks in the Fairness surrogate's behaviour on the OR-Tools solver. Fairness is now
-/// <c>max(driver_time)</c> (min-max / Cmax) — see <see cref="ObjectiveEvaluator.Evaluate"/> for the
-/// full history of why we discarded the previous spread/range/count formulations. The two tests
-/// below pin the two properties that motivated the switch:
+/// Locks in the Fairness surrogate's behaviour on the OR-Tools solver. Fairness is now max extra
+/// pickup burden above each driver's direct solo trip — see <see cref="ObjectiveEvaluator.Evaluate"/>
+/// for the full history of why we discarded the previous spread/range/raw-time/count formulations.
+/// The tests below pin the properties that motivated the switch:
 ///
 /// <list type="number">
 ///   <item><description>When activating a second car genuinely lowers the longest driver's clock,
@@ -50,8 +50,9 @@ public class DriverLoadFairnessTests
         // Pure-DriveTime view (no Fairness, premium ×2 baked into ObjectiveEvaluator):
         //   Consolidation (d0 does all): 4+2+10+2+12 = 30  →  drive-cost = 30 × 0.2 × 2 = 12
         //   Split 2/2:                   18 + 18    = 36  →  drive-cost = 36 × 0.2 × 2 = 14.4
-        // DriveTime alone prefers consolidation by 2.4. Fairness with the new min-max surrogate
-        // saves 30 − 18 = 12 by splitting, which flips the trade decisively at Fairness=1.0.
+        // DriveTime alone prefers consolidation by 2.4. Fairness with the extra-burden surrogate
+        // saves 10 minutes of max burden by splitting: consolidated d0 is 30 against a 20 minute
+        // solo baseline, while each split route is below the same solo baseline.
         var weights = new ObjectiveWeights(
             DriveTime: 0.2,
             StopCount: 0.1,
@@ -105,10 +106,10 @@ public class DriverLoadFairnessTests
             (0, 6, 15), (1, 6, 15)
         );
 
-        // Consolidated (d0 does all): 3+2+2+2+10 = 19. d1 stays home → fairness = 19.
-        // Any split puts d1 onto a 25+...+10 route (≥ 37 min) → max balloons to 37+. Min-max
-        // correctly leaves d1 idle even at Fairness=1.0; pre-fix spread surrogate would have
-        // inflated either d0 or d1 to close the 19→0 gap, which is the bug we're guarding.
+        // Consolidated (d0 does all): 3+2+2+2+10 = 19 against a 15 minute solo baseline, so burden
+        // is only 4. d1 stays idle → burden 0. Any split puts d1 onto a 25+...+10 route (≥ 37 min),
+        // a 22+ minute burden. Min-max burden correctly leaves d1 idle even at Fairness=1.0;
+        // pre-fix spread/raw-time surrogates could inflate either d0 or d1 for the wrong reason.
         var weights = new ObjectiveWeights(
             DriveTime: 0.2,
             StopCount: 0.1,

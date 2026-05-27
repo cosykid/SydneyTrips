@@ -44,6 +44,8 @@ export function LiveMap(props: LiveMapProps): React.JSX.Element {
             totalStops: props.route.stops.length,
             totalWalkMetres: 0,
             maxWalkMetres: 0,
+            maxJourneyMinutes: props.route.drivingMinutes,
+            maxJourneyParticipantName: props.route.driverDisplayName,
             fairnessIndex: 0,
           },
           routes: [props.route],

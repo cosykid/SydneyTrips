@@ -33,7 +33,7 @@ namespace Trips.Optimisation.OrTools;
 /// (7) seat capacity per driver is equivalent to (4) — modelled as a single constraint.
 /// </para>
 /// <para>
-/// Objective: <c>α·travel + β·stops + γ·passenger_walk_pt + δ·spread + ε·fairness</c>. CP-SAT works
+/// Objective: <c>α·travel + β·stops + γ·pt_access + δ·spread + ε·fairness</c>. CP-SAT works
 /// in integers, so weights are scaled by <see cref="WeightScale"/> and travel times are stored as
 /// minutes·100 to retain two decimal digits of precision.
 /// </para>
@@ -310,7 +310,8 @@ public sealed class OrToolsSolver : ISolver
             }
         }
 
-        // Walk term: Σ assign[d,p,n] · walkPt(p,n)·TimeScale · w2
+        // Public-transport access term: Σ assign[d,p,n] · walkPt(p,n)·TimeScale · w2.
+        // walkPt is the passenger's full home→pickup PT time, including walking segments.
         for (var d = 0; d < input.Drivers.Count; d++)
         {
             for (var p = 0; p < input.Passengers.Count; p++)
@@ -338,29 +339,23 @@ public sealed class OrToolsSolver : ISolver
         }
         model.Add(spread == maxArr - minArr);
 
-        // Fairness term: "Share driving time evenly across drivers" (the UI's framing). The full
-        // history of attempts (and why each broke) lives on ObjectiveEvaluator.Evaluate — read that
-        // before changing this. tl;dr: spread (max − min) has two levers, and "pull the short
-        // route up by detouring it" is often cheaper than restructuring the long one, which gave
-        // drivers near the destination wasteful loops just to "share the load."
-        //
-        // Min-max only has the good lever: cutting the maximum requires shortening the longest
-        // route, or splitting it onto a previously idle driver (raises that driver's time, but only
-        // bites if it exceeds the prior max). Never rewards extending a short route. Idle drivers
-        // pinned to 0 don't appear in the max, so an optimal single-car solution stays optimal —
-        // no phantom pressure to activate a second car on small trips. Already in scaled-time
-        // units; composes with the travel term at the same scale, so Fairness=1.0 trades one minute
-        // on the longest driver's clock against one (premium-weighted) minute of total driving.
-        var driverTimeVars = new IntVar[input.Drivers.Count];
+        // Fairness term: maximum extra pickup burden per driver:
+        //     max_d max(0, route_time_d - direct_solo_time_d)
+        // See ObjectiveEvaluator.Evaluate for the full history. The important property is that
+        // fairness ignores natural home→destination distance and charges only detour created by
+        // carrying passengers. Idle drivers therefore contribute 0 to this term, even though the
+        // displayed route can still show their solo drive.
+        var driverBurdenVars = new IntVar[input.Drivers.Count];
         for (var d = 0; d < input.Drivers.Count; d++)
         {
-            var dt = model.NewIntVar(0, BigM, $"drive_time_d{d}");
-            model.Add(dt == arrival[d, destIndex]).OnlyEnforceIf(hasLoadVars[d]);
-            model.Add(dt == 0).OnlyEnforceIf(hasLoadVars[d].Not());
-            driverTimeVars[d] = dt;
+            var burden = model.NewIntVar(0, BigM, $"pickup_burden_d{d}");
+            var solo = (long)Math.Round(input.TravelMatrix[input.Drivers[d].OriginNodeIndex, destIndex] * TimeScale);
+            model.Add(burden >= arrival[d, destIndex] - solo).OnlyEnforceIf(hasLoadVars[d]);
+            model.Add(burden == 0).OnlyEnforceIf(hasLoadVars[d].Not());
+            driverBurdenVars[d] = burden;
         }
-        var maxDrive = model.NewIntVar(0, BigM, "max_drive");
-        model.AddMaxEquality(maxDrive, driverTimeVars);
+        var maxDrive = model.NewIntVar(0, BigM, "max_pickup_burden");
+        model.AddMaxEquality(maxDrive, driverBurdenVars);
 
         totalObj.AddTerm(spread, w3);
         totalObj.AddTerm(maxDrive, w4);

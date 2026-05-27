@@ -13,7 +13,7 @@ public sealed class Solution
     public string Label { get; private set; }
     public double Objective { get; private set; }
 
-    /// <summary>Per-term breakdown of the objective: drive / stops / walk+PT / spread / fairness.</summary>
+    /// <summary>Per-term breakdown of the objective: drive / stops / PT access / spread / fairness.</summary>
     public double[] ObjectiveTerms { get; private set; }
 
     private readonly List<DriverRoute> _routes = new();

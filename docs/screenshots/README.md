@@ -8,7 +8,7 @@ Source images for the top-level `README.md` and the architecture notes.
 | ---- | ---- | ------------- |
 | `01-trips-dashboard.png`  | real | Trips dashboard (the entry point — no login), with the seeded "Group trip to Palm Beach" card visible. |
 | `02-trip-overview.png`    | real | Trip overview — locked-solution badge, calendar-hold buttons per participant, and the full participant list rendered from the eager-loaded `participants[]` on `GET /trips/{id}`. |
-| `03-planning-canvas.png`  | real | Planner — weight sliders for the five objective terms, optimise button, participant + candidate-node markers on the map, trip name chip. |
+| `03-planning-canvas.png`  | real | Planner — route-priority sliders, optimise button, participant + candidate-node markers on the map, trip name chip. |
 | `04-driver-view.png`      | real | Driver manifest — ordered pickup stops with ETAs, Google/Apple Maps deep links, live SignalR connection badge, route polyline through the picks to the destination. |
 | `05-cost-split.png`       | real | Cost-split breakdown — one card per participant with fuel + tolls + total, plus the `driver pays nothing` callout when applicable. |
 | `06-whatif-diff.svg`      | mockup | What-if dialog: scenario inputs on the left, diff on the right. Capture spec lives in `web/tests/screenshots.spec.ts`; needs a planner session with the locked solution selected in the carousel (see [Regenerating](#regenerating-the-screenshots)). |

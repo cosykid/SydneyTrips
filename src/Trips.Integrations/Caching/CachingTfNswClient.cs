@@ -94,7 +94,9 @@ internal sealed class CachingTfNswClient : ITfNswClient
         string? RouteShortName,
         string? FromName,
         string? ToName,
-        List<SerialisedPoint>? Polyline)
+        List<SerialisedPoint>? Polyline,
+        DateTimeOffset? DepartureTime,
+        DateTimeOffset? ArrivalTime)
     {
         public static CachedJourneyLeg FromDto(TfNswJourneyLeg leg) =>
             new(
@@ -105,11 +107,13 @@ internal sealed class CachingTfNswClient : ITfNswClient
                 leg.RouteShortName,
                 leg.FromName,
                 leg.ToName,
-                // Round-trip the leg geometry and stop names through the cache. Dropping them (the
-                // original bug) meant any cache hit yielded legs with a null Polyline, which
-                // collapsed each candidate node's PT path to null and made the map draw crow-fly
-                // straight lines instead of the real route.
-                leg.Polyline?.Select(SerialisedPoint.From).ToList());
+                // Round-trip the leg geometry, stop names, and clock times through the cache.
+                // Dropping any of these (the original bug, for geometry) meant a cache hit yielded
+                // legs missing that field — e.g. a null Polyline collapsed the PT path to crow-fly,
+                // and dropping the times would blank the itinerary's schedule on a cache hit.
+                leg.Polyline?.Select(SerialisedPoint.From).ToList(),
+                leg.DepartureTime,
+                leg.ArrivalTime);
 
         public TfNswJourneyLeg ToDto() =>
             new(
@@ -120,7 +124,9 @@ internal sealed class CachingTfNswClient : ITfNswClient
                 RouteShortName,
                 FromName,
                 ToName,
-                Polyline?.Select(p => p.ToPoint()).ToList());
+                Polyline?.Select(p => p.ToPoint()).ToList(),
+                DepartureTime,
+                ArrivalTime);
     }
 
     private sealed record CachedTripPlan(List<CachedJourneyLeg> Legs, int TotalWalkMins, int TotalPtMins)

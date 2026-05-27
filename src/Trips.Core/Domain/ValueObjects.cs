@@ -41,10 +41,12 @@ public sealed record Preferences(
 /// </summary>
 /// <param name="DriveTime">Weight on total driver minutes.</param>
 /// <param name="StopCount">Weight on number of pickup stops (each visit incurs a fixed cost).</param>
-/// <param name="WalkAndPt">Weight on cumulative passenger walk + public-transport minutes.</param>
+/// <param name="WalkAndPt">Weight on cumulative passenger public-transport access minutes,
+/// including walking segments.</param>
 /// <param name="ArrivalSpread">Weight on spread (max-min) of passenger arrival times at the destination.</param>
-/// <param name="Fairness">Weight on driver-load fairness — the spread (max-min) of driving minutes
-/// across drivers, so cranking it pushes the solver to share the driving rather than load one car.</param>
+/// <param name="Fairness">Weight on driver-load fairness — the maximum extra pickup burden over each
+/// driver's direct solo trip, so cranking it pushes the solver to share carpool detours rather than
+/// penalise someone for living farther from the destination.</param>
 public sealed record ObjectiveWeights(
     double DriveTime,
     double StopCount,
@@ -54,7 +56,8 @@ public sealed record ObjectiveWeights(
 {
     public static ObjectiveWeights Fastest { get; } = new(DriveTime: 1.0, StopCount: 0.2, WalkAndPt: 0.4, ArrivalSpread: 0.3, Fairness: 0.2);
     public static ObjectiveWeights FewestStops { get; } = new(DriveTime: 0.5, StopCount: 1.0, WalkAndPt: 0.4, ArrivalSpread: 0.2, Fairness: 0.2);
-    public static ObjectiveWeights LeastWalking { get; } = new(DriveTime: 0.5, StopCount: 0.2, WalkAndPt: 1.0, ArrivalSpread: 0.2, Fairness: 0.3);
+    public static ObjectiveWeights LeastTransit { get; } = new(DriveTime: 0.5, StopCount: 0.2, WalkAndPt: 1.0, ArrivalSpread: 0.2, Fairness: 0.3);
+    public static ObjectiveWeights LeastWalking => LeastTransit;
 
     public static ObjectiveWeights Balanced { get; } = new(DriveTime: 0.6, StopCount: 0.4, WalkAndPt: 0.6, ArrivalSpread: 0.3, Fairness: 0.3);
 }

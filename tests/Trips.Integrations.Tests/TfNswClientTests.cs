@@ -29,6 +29,25 @@ public sealed class TfNswClientTests : MockServerTestBase
     }
 
     [Fact]
+    public async Task TripPlanAsync_formats_itdDate_and_itdTime_in_Sydney_local_time()
+    {
+        // Regression: EFA reads itdDate/itdTime as Sydney local time, but our DepartAt is a UTC
+        // instant. Formatting the raw UTC components made EFA plan a trip ~10h off — a morning
+        // journey became a late-night one — which surfaced as nonsensical pickup clock times in
+        // the planner itinerary. The client must convert to Australia/Sydney before formatting.
+        var client = ClientFactory.TfNsw(Fixture.Servers);
+        var origin = Geom.CreatePoint(new Coordinate(151.2073, -33.8730));
+        var destination = Geom.CreatePoint(new Coordinate(151.2796, -33.8908));
+
+        // 2026-05-27T23:00:00Z == 2026-05-28 09:00 AEST (UTC+10, no daylight saving in May).
+        var departUtc = new DateTimeOffset(2026, 5, 27, 23, 0, 0, TimeSpan.Zero);
+        await client.TripPlanAsync(origin, destination, departUtc, CancellationToken.None);
+
+        Fixture.Servers.TfNswTripPlanRequests()
+            .Should().Contain(q => q.Contains("itdDate=20260528") && q.Contains("itdTime=0900"));
+    }
+
+    [Fact]
     public async Task TripPlanAsync_routes_parramatta_to_manly_fixture()
     {
         var client = ClientFactory.TfNsw(Fixture.Servers);
