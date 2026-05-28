@@ -83,7 +83,7 @@ sequenceDiagram
     participant N as Next.js /api/proxy
     participant API as Trips.Api
     participant DB as PostgreSQL+PostGIS
-    participant OPT as Trips.Optimisation
+    participant SOLVER as Trips.Optimisation
     participant RT as Trips.Realtime (SignalR hub)
     participant GR as Google Routes
 
@@ -98,10 +98,10 @@ sequenceDiagram
     end
 
     U->>API: POST /trips/{id}/optimise (weights, solver)
-    API->>OPT: enqueue OptimisationRun
-    OPT->>GR: compute_route_matrix (or cached)
-    OPT->>OPT: CP-SAT search + SA refine
-    OPT-->>DB: write run, pareto solutions
+    API->>SOLVER: enqueue OptimisationRun
+    SOLVER->>GR: compute_route_matrix (or cached)
+    SOLVER->>SOLVER: CP-SAT search + SA refine
+    SOLVER-->>DB: write run, pareto solutions
     API-->>U: 202 { runId }
 
     U->>API: GET /trips/{id}/runs/{runId}
@@ -116,14 +116,14 @@ sequenceDiagram
 
     loop driver position
         U->>RT: DriverPositionUpdate (lat, lng, heading)
-        RT->>OPT: recompute remaining ETAs
+        RT->>SOLVER: recompute remaining ETAs
         RT-->>U: PassengerEtaUpdate to all riders
         RT->>DB: append TripEvent (DriverDeparted / Arrived)
     end
 
     U->>API: POST /trips/{id}/whatif (drop participant)
-    API->>OPT: solve from locked hint (warm-start)
-    OPT-->>API: pareto diff
+    API->>SOLVER: solve from locked hint (warm-start)
+    SOLVER-->>API: pareto diff
     API-->>U: diff payload
 ```
 
